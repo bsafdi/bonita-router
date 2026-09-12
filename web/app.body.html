@@ -362,6 +362,10 @@ function buildFields(){
     S.series[id] = new M.RefSeries(s.t, s.v);
   S.cf = new M.CurrentField(S.grid, DATA, S.series, {strength: S.curScale});
   S.wf = new M.WindField(S.grid, DATA, {});
+  /* the GPS wind calibration is state, like polScale and curScale: the
+     6-minute live rebuild must not silently drop it while the UI still
+     reports it (and the next Apply compounds from the stale value) */
+  S.wf.speedScale = S.windCal || 1;
   applyWindSource();
   S.polar = new M.Polar(DATA, S.polScale);
   S.router = new M.Router(S.grid, S.wf, S.cf, S.polar, {currentScale: 1});
