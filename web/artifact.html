@@ -1,0 +1,2341 @@
+<title>Bonita Router</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#0b1220; --surface:#131e2e; --surface2:#1a2739; --line:#26364c;
+  --ink:#e8eef6; --ink-dim:#93a6be; --ink-faint:#61758f;
+  --accent:#f2b233; --accent-dim:#8a6820;
+  --port:#e4453c; --stbd:#2fbf71;
+  --flood:#f2724b; --ebb:#4fa8e8;
+  --land:#26313f; --land-edge:#33404f;
+  --ok:#2fbf71; --warn:#f2b233; --bad:#e4453c;
+  --r:4px;
+  --f-disp:"Barlow Condensed",ui-sans-serif,system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+:root[data-theme="light"]{
+  --ground:#f2f4f7; --surface:#ffffff; --surface2:#e9edf3; --line:#c8d2df;
+  --ink:#14202f; --ink-dim:#4b5c73; --ink-faint:#7a8ba3;
+  --accent:#a3701a; --accent-dim:#d9b46a;
+  --port:#c62b22; --stbd:#12813f;
+  --flood:#c2481f; --ebb:#1f6ea8;
+  --land:#e2dcc9; --land-edge:#c9c1a8;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--ground);color:var(--ink);
+  font-family:var(--f-body);-webkit-text-size-adjust:100%}
+body{min-height:100vh;display:flex;flex-direction:column;
+  padding-bottom:env(safe-area-inset-bottom)}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.num{font-family:var(--f-disp);font-variant-numeric:tabular-nums;font-weight:700;
+  line-height:.92;letter-spacing:.01em}
+.lbl{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);
+  font-weight:600}
+
+/* ---------- status strip ---------- */
+#bar{display:flex;align-items:center;gap:10px;padding:7px 12px;background:var(--surface);
+  border-bottom:1px solid var(--line);flex-wrap:wrap;position:sticky;top:0;z-index:20}
+#bar .clock{font-family:var(--f-mono);font-size:15px;font-weight:500;letter-spacing:.02em}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;
+  letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:99px;
+  border:1px solid var(--line);color:var(--ink-dim);white-space:nowrap}
+.chip b{font-weight:600;color:var(--ink)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--ink-faint);flex:none}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--bad)}
+#bar .spacer{flex:1}
+
+/* ---------- decision block ---------- */
+#call{padding:14px 12px 12px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,var(--surface) 0%,var(--ground) 100%)}
+#callRow{display:flex;align-items:flex-start;gap:14px}
+#callWord{font-family:var(--f-disp);font-weight:700;font-size:clamp(38px,13vw,64px);
+  line-height:.86;letter-spacing:-.01em;text-wrap:balance}
+#callWord.port{color:var(--port)} #callWord.stbd{color:var(--stbd)}
+#callWord.hold{color:var(--ink)} #callWord.wait{color:var(--ink-faint)}
+#callSub{font-size:12.5px;color:var(--ink-dim);margin-top:6px;line-height:1.35;max-width:34ch}
+#steer{margin-left:auto;text-align:right;flex:none}
+#steer .num{font-size:clamp(40px,14vw,68px);color:var(--accent)}
+#steer .deg{font-size:.44em;vertical-align:super;margin-left:1px}
+
+#tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.tile{background:var(--ground);padding:9px 10px 10px;min-width:0}
+.tile .lbl{margin-bottom:5px}
+.tile .num{font-size:clamp(21px,6.4vw,30px)}
+.tile .u{font-size:11px;color:var(--ink-faint);font-family:var(--f-body);font-weight:500;
+  margin-left:2px;letter-spacing:0}
+.tile.alarm .num{color:var(--accent)}
+.tile .sub{font-size:10px;color:var(--ink-faint);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ---------- chart ---------- */
+#chartWrap{position:relative;flex:1;min-height:230px;background:var(--ground)}
+#chart{display:block;width:100%;height:100%;touch-action:none}
+#chartTools{position:absolute;top:8px;right:8px;display:flex;gap:5px}
+.tool{background:color-mix(in srgb,var(--surface) 86%,transparent);
+  border:1px solid var(--line);border-radius:var(--r);padding:5px 8px;font-size:10.5px;
+  font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim)}
+.tool[aria-pressed="true"]{color:var(--ground);background:var(--accent);border-color:var(--accent)}
+#legend{position:absolute;left:8px;bottom:8px;display:flex;gap:9px;flex-wrap:wrap;
+  font-size:10px;color:var(--ink-dim);background:color-mix(in srgb,var(--surface) 86%,transparent);
+  border:1px solid var(--line);border-radius:var(--r);padding:5px 7px}
+#legend i{display:inline-block;width:9px;height:3px;border-radius:2px;margin-right:4px;
+  vertical-align:middle}
+
+/* ---------- panels ---------- */
+#panels{background:var(--ground);border-top:1px solid var(--line)}
+details{border-bottom:1px solid var(--line)}
+summary{list-style:none;cursor:pointer;padding:11px 12px;display:flex;align-items:center;
+  gap:9px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-dim)}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"";margin-left:auto;width:6px;height:6px;border-right:1.5px solid currentColor;
+  border-bottom:1.5px solid currentColor;transform:rotate(45deg);transition:transform .15s}
+details[open] summary::after{transform:rotate(-135deg)}
+.body{padding:0 12px 14px;display:flex;flex-direction:column;gap:12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.field{display:flex;flex-direction:column;gap:5px}
+input[type=range]{width:100%;accent-color:var(--accent);height:26px}
+.rowval{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.rowval .num{font-size:19px}
+table{width:100%;border-collapse:collapse;font-family:var(--f-mono);font-size:11.5px}
+th,td{text-align:right;padding:3px 4px;border-bottom:1px solid var(--line);
+  font-variant-numeric:tabular-nums}
+th{color:var(--ink-faint);font-weight:500;font-size:10px;letter-spacing:.06em;
+  text-transform:uppercase;font-family:var(--f-body)}
+td:first-child,th:first-child{text-align:left}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.btn{background:var(--surface2);border:1px solid var(--line);border-radius:var(--r);
+  padding:10px 12px;font-size:12px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink);text-align:center}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#12181f}
+.btn:disabled{opacity:.45}
+.btnrow{display:flex;gap:8px}
+.btnrow>*{flex:1}
+.seg{display:flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.seg button{flex:1;padding:9px 6px;font-size:11px;font-weight:600;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--ink-dim);background:var(--surface)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#12181f}
+.note{font-size:11.5px;color:var(--ink-faint);line-height:1.5}
+.note b{color:var(--ink-dim);font-weight:600}
+.bad{color:var(--bad)} .good{color:var(--ok)} .warnc{color:var(--warn)}
+#foot{padding:14px 12px 20px;font-size:11px;color:var(--ink-faint);line-height:1.55;
+  border-top:1px solid var(--line)}
+@media (min-width:760px){
+  #tiles{grid-template-columns:repeat(4,1fr)}
+  .grid2{grid-template-columns:repeat(4,1fr)}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div id="bar">
+  <span class="clock" id="clock">--:--</span>
+  <span class="chip" id="chGps"><i class="dot" id="dGps"></i><span>GPS</span></span>
+  <span class="chip" id="chData"><i class="dot" id="dData"></i><span id="tData">DATA</span></span>
+  <span class="chip" id="chSolve"><i class="dot" id="dSolve"></i><span id="tSolve">MODEL</span></span>
+  <span class="spacer"></span>
+  <button class="tool" id="btnTheme" title="Toggle theme">◐</button>
+</div>
+
+<div id="call">
+  <div id="callRow">
+    <div>
+      <div id="callWord" class="wait">STANDBY</div>
+      <div id="callSub">Waiting for a position fix. Open the Position panel to run in simulate mode instead.</div>
+    </div>
+    <div id="steer">
+      <div class="lbl">Steer</div>
+      <div class="num"><span id="steerVal">---</span><span class="deg">°</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="tiles">
+  <div class="tile"><div class="lbl">Your COG / SOG</div>
+    <div class="num"><span id="tCog">---</span><span class="u">° <span id="tSog">--</span> kt</span></div></div>
+  <div class="tile" id="tileNext"><div class="lbl">Next move</div>
+    <div class="num"><span id="tNext">--</span><span class="u" id="tNextU"> min</span></div>
+    <div class="sub" id="tNextD">&nbsp;</div></div>
+  <div class="tile"><div class="lbl" id="lblMark">To Bonita</div>
+    <div class="num"><span id="tToMark">--</span><span class="u">nm</span></div></div>
+  <div class="tile"><div class="lbl" id="lblEta">Finish ETA</div>
+    <div class="num"><span id="tEta">--:--</span></div></div>
+</div>
+
+<div id="chartWrap">
+  <canvas id="chart"></canvas>
+  <div id="chartTools">
+    <button class="tool" id="btnLayer" aria-pressed="true">Current</button>
+    <button class="tool" id="btnFollow" aria-pressed="true">Follow</button>
+    <button class="tool" id="btnFit">Fit</button>
+  </div>
+  <div id="legend">
+    <span><i style="background:var(--accent)"></i>plan</span>
+    <span><i style="background:var(--ink)"></i>sailed</span>
+    <span><i style="background:var(--flood)"></i>flood</span>
+    <span><i style="background:var(--ebb)"></i>ebb</span>
+    <span><i style="background:#ff3b3b"></i>SI 10 no-go</span>
+    <span><i style="background:#9fb4ff;opacity:.7"></i>ship lane</span>
+  </div>
+</div>
+
+<div id="panels">
+
+<details id="pLeg">
+  <summary>Race state</summary>
+  <div class="body">
+    <div class="lbl" style="margin-bottom:4px">Course (numeral pennant at the 11:00 warning)</div>
+    <div class="seg" id="segCourse">
+      <button data-course="1" aria-pressed="true">1 · PB (Bonita)</button>
+      <button data-course="2" aria-pressed="false">2 · EASOM</button>
+    </div>
+    <div class="seg" id="segLeg" style="margin-top:8px">
+      <button data-leg="pre" aria-pressed="false">Pre-start</button>
+      <button data-leg="out" aria-pressed="true" id="btnLegOut">To mark</button>
+      <button data-leg="back" aria-pressed="false">To finish</button>
+    </div>
+    <div class="grid2">
+      <div class="rowval"><span class="lbl" id="lblRound">Round mark</span><span class="num" id="vRound">--:--</span></div>
+      <div class="rowval"><span class="lbl">Finish</span><span class="num" id="vFinish">--:--</span></div>
+      <div class="rowval"><span class="lbl">Elapsed so far</span><span class="num" id="vElapsed">--</span></div>
+      <div class="rowval"><span class="lbl">Remaining</span><span class="num" id="vRemain">--</span></div>
+      <div class="rowval"><span class="lbl">Time limit (SI 6.2)</span><span class="num" id="vLimit">19:00</span></div>
+      <div class="rowval"><span class="lbl">In hand</span><span class="num" id="vInHand">--</span></div>
+    </div>
+    <div class="note" id="zones">Shipping-lane crossings appear once a route is solved.</div>
+    <div class="note" id="obsNote"></div>
+    <div class="field"><span class="lbl">Start time (first gun)</span>
+      <input type="time" id="inStart" value="11:05" style="background:var(--surface);
+        border:1px solid var(--line);border-radius:var(--r);padding:8px;color:var(--ink);
+        font-family:var(--f-mono)"></div>
+    <div class="note" id="lanes">Lane comparison appears once a route is solved.</div>
+  </div>
+</details>
+
+<details id="pWind">
+  <summary>Wind</summary>
+  <div class="body">
+    <div class="grid2">
+      <div class="rowval"><span class="lbl">Model here</span><span class="num"><span id="wHere">--</span><span class="u"> kt</span></span></div>
+      <div class="rowval"><span class="lbl">From</span><span class="num"><span id="wDir">---</span><span class="u">°</span></span></div>
+    </div>
+    <div class="seg" id="segWind">
+      <button data-src="auto" aria-pressed="true">Live + forecast</button>
+      <button data-src="manual" aria-pressed="false">Manual</button>
+    </div>
+    <div class="field"><span class="lbl">Observed TWS here <b id="mTws">19</b> kt</span>
+      <input type="range" id="rTws" min="3" max="35" step="0.5" value="19"></div>
+    <div class="field"><span class="lbl">Observed TWD <b id="mTwd">255</b>° true</span>
+      <input type="range" id="rTwd" min="180" max="330" step="1" value="255"></div>
+    <div class="note" id="windNote">Live anemometer data not loaded yet.</div>
+    <div class="scroll"><table id="obsTable"></table></div>
+  </div>
+</details>
+
+<details id="pCur">
+  <summary>Current</summary>
+  <div class="body">
+    <div class="grid2">
+      <div class="rowval"><span class="lbl">Set here</span><span class="num"><span id="cHere">--</span><span class="u"> kt</span></span></div>
+      <div class="rowval"><span class="lbl">Toward</span><span class="num"><span id="cDir">---</span><span class="u">°</span></span></div>
+    </div>
+    <div class="note" id="curNote"></div>
+    <div class="scroll"><table id="stnTable"></table></div>
+    <div class="field"><span class="lbl">Current strength &times;<b id="mCur">1.00</b></span>
+      <input type="range" id="rCur" min="0.6" max="1.4" step="0.02" value="1"></div>
+  </div>
+</details>
+
+<details id="pPos">
+  <summary>Position &amp; calibration</summary>
+  <div class="body">
+    <div class="btnrow">
+      <button class="btn primary" id="btnGps">Start GPS</button>
+      <button class="btn" id="btnSim">Simulate</button>
+    </div>
+    <div class="grid2">
+      <div class="rowval"><span class="lbl">Latitude</span><span class="num" id="pLat" style="font-size:15px">--</span></div>
+      <div class="rowval"><span class="lbl">Longitude</span><span class="num" id="pLon" style="font-size:15px">--</span></div>
+    </div>
+    <div class="note" id="calNote">The model compares your GPS speed with what it predicts for your
+      course, position and time. A ratio that stays away from 1.00 means the wind or the polar is off.</div>
+    <div class="grid2">
+      <div class="rowval"><span class="lbl">Predicted SOG</span><span class="num" id="calPred" style="font-size:19px">--</span></div>
+      <div class="rowval"><span class="lbl">Ratio obs/pred</span><span class="num" id="calRatio" style="font-size:19px">--</span></div>
+    </div>
+    <button class="btn" id="btnApplyCal" disabled>Apply as wind correction</button>
+    <div class="field"><span class="lbl">Boatspeed scale &times;<b id="mPol">1.00</b> &mdash; implied PHRF <b id="mPhrf">--</b></span>
+      <input type="range" id="rPol" min="0.88" max="1.12" step="0.01" value="1"></div>
+  </div>
+</details>
+
+<details id="pSet">
+  <summary>Model &amp; data</summary>
+  <div class="body">
+    <div class="field"><span class="lbl">Grid resolution <b id="mRes">250</b> m &mdash; finer is slower</span>
+      <input type="range" id="rRes" min="200" max="450" step="50" value="250"></div>
+    <div class="field"><span class="lbl">Model clock</span>
+      <div class="seg" id="segClock">
+        <button data-clock="live" aria-pressed="true">Live</button>
+        <button data-clock="manual" aria-pressed="false">Set time</button>
+      </div></div>
+    <div class="field"><span class="lbl">Time <b id="mTime">--:--</b></span>
+      <input type="range" id="rTime" min="8" max="21" step="0.0833" value="10.25"></div>
+    <div class="btnrow">
+      <button class="btn" id="btnRefresh">Refresh NOAA</button>
+      <button class="btn primary" id="btnSolve">Re-route now</button>
+    </div>
+    <div class="note" id="dataNote"></div>
+  </div>
+</details>
+
+</div>
+
+<div id="foot">
+  <b>What this is.</b> A time-optimal router for the BYC Big Windward&ndash;Leeward Regatta
+  (course 1 to Point Bonita, course 2 to EASOM, signalled at the 11:00 warning),
+  solving an earliest-arrival Dijkstra over a tidal current field built from
+  <span id="ftStations">8</span> NOAA current stations plus hand zones for the water NOAA does not
+  instrument &mdash; including the Cityfront flood back-eddy and the Yellow Bluff ebb back-eddy,
+  which are what decide this race.
+  <br><br>
+  <b>What to distrust.</b> The Olson&nbsp;25 polar is constructed, not measured: absolute times are
+  only as good as that table, though lane comparisons are far more robust because the error largely
+  cancels. The coastline is hand-digitized. The wind field has no shifts, gusts or puff structure, so
+  the router never decides under uncertainty &mdash; it also knows the future exactly, which is worth
+  real time on a course where the tide turns mid-race. Treat its elapsed time as an optimistic bound
+  and its lane calls as the useful part. The SI&nbsp;10 obstruction lines are hard barriers in the
+  router; five of the six are taken from the NOAA ENC, the "H" beam is placed from the SI text only.
+  Marks are routed to, not rounded &mdash; leave them to port yourself (SI&nbsp;12.3).
+  <br><br>
+  <span id="ftBuild"></span>
+</div>
+<script>
+/* =====================================================================
+   Bonita router -- browser port of the Python model.
+
+   Same physics, same numbers: grid + land mask from the shipped polygons,
+   a station-driven current field with flood/ebb eddy zones, a parameterised
+   sea breeze with a ray-marched terrain shadow, an Olson 25 polar, and an
+   earliest-arrival Dijkstra over (cell, arrival direction) states.
+
+   Everything runs from the ~9 KB model_data.json blob, so the tables stay
+   editable rather than being baked into precomputed fields.
+   ===================================================================== */
+(function (root) {
+'use strict';
+
+const D2R = Math.PI / 180, R2D = 180 / Math.PI;
+
+/* ---------------------------------------------------------------- heap */
+class MinHeap {
+  constructor(cap) {
+    this.k = new Float64Array(cap);      // key (time)
+    this.v = new Int32Array(cap);        // payload (state index)
+    this.n = 0;
+    this.cap = cap;
+  }
+  _grow() {
+    const k = new Float64Array(this.cap * 2), v = new Int32Array(this.cap * 2);
+    k.set(this.k); v.set(this.v);
+    this.k = k; this.v = v; this.cap *= 2;
+  }
+  push(key, val) {
+    if (this.n === this.cap) this._grow();
+    let i = this.n++;
+    this.k[i] = key; this.v[i] = val;
+    while (i > 0) {
+      const p = (i - 1) >> 1;
+      if (this.k[p] <= this.k[i]) break;
+      const tk = this.k[p], tv = this.v[p];
+      this.k[p] = this.k[i]; this.v[p] = this.v[i];
+      this.k[i] = tk; this.v[i] = tv;
+      i = p;
+    }
+  }
+  pop() {
+    if (this.n === 0) return null;
+    const rk = this.k[0], rv = this.v[0];
+    this.n--;
+    if (this.n > 0) {
+      this.k[0] = this.k[this.n]; this.v[0] = this.v[this.n];
+      let i = 0;
+      for (;;) {
+        const l = 2 * i + 1, r = l + 1;
+        let s = i;
+        if (l < this.n && this.k[l] < this.k[s]) s = l;
+        if (r < this.n && this.k[r] < this.k[s]) s = r;
+        if (s === i) break;
+        const tk = this.k[s], tv = this.v[s];
+        this.k[s] = this.k[i]; this.v[s] = this.v[i];
+        this.k[i] = tk; this.v[i] = tv;
+        i = s;
+      }
+    }
+    this.last = { key: rk, val: rv };
+    return this.last;
+  }
+}
+
+/* ----------------------------------------------------------- geometry */
+/* 16 grid moves, same order as bonita/router.py OFFSETS ([dc, dr]) */
+const OFFSETS = [[1,0],[2,1],[1,1],[1,2],[0,1],[-1,2],[-1,1],[-2,1],
+                 [-1,0],[-2,-1],[-1,-1],[-1,-2],[0,-1],[1,-2],[1,-1],[2,-1]];
+const NDIR = 16, START_DIR = 16, NSTATE = 17;
+
+/* Segment AB intersects segment CD?  Touching counts (conservative, as in
+   geo._segments_intersect -- the boat never gets the benefit of the doubt). */
+function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
+  const o = (px, py, qx, qy, rx, ry) => (qx - px) * (ry - py) - (qy - py) * (rx - px);
+  const o1 = o(ax, ay, bx, by, cx, cy), o2 = o(ax, ay, bx, by, dx, dy);
+  const o3 = o(cx, cy, dx, dy, ax, ay), o4 = o(cx, cy, dx, dy, bx, by);
+  return (o1 * o2) <= 0 && (o3 * o4) <= 0;
+}
+
+function pointInPoly(px, py, poly) {
+  let inside = false;
+  const n = poly.length;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const yi = poly[i][1], yj = poly[j][1];
+    if ((yi > py) !== (yj > py)) {
+      const xi = poly[i][0], xj = poly[j][0];
+      const x = xi + (py - yi) * (xj - xi) / (yj - yi || 1e-12);
+      if (px < x) inside = !inside;
+    }
+  }
+  return inside;
+}
+
+class Grid {
+  constructor(data, resM, opts) {
+    opts = opts || {};
+    const P = data.proj, D = data.domain;
+    this.data = data;
+    this.res = resM;
+    this.lat0 = P.lat0; this.lon0 = P.lon0;
+    this.mLat = P.mPerDegLat; this.mLon = P.mPerDegLon;
+
+    const x0 = (D.lon_min - this.lon0) * this.mLon;
+    const x1 = (D.lon_max - this.lon0) * this.mLon;
+    const y0 = (D.lat_min - this.lat0) * this.mLat;
+    const y1 = (D.lat_max - this.lat0) * this.mLat;
+    this.nx = Math.ceil((x1 - x0) / resM);
+    this.ny = Math.ceil((y1 - y0) / resM);
+    this.ox = x0; this.oy = y0;
+    const N = this.nx * this.ny;
+    this.N = N;
+
+    this.X = new Float32Array(N); this.Y = new Float32Array(N);
+    this.LON = new Float32Array(N); this.LAT = new Float32Array(N);
+    for (let r = 0; r < this.ny; r++) {
+      const y = y0 + (r + 0.5) * resM;
+      for (let c = 0; c < this.nx; c++) {
+        const i = r * this.nx + c, x = x0 + (c + 0.5) * resM;
+        this.X[i] = x; this.Y[i] = y;
+        this.LON[i] = x / this.mLon + this.lon0;
+        this.LAT[i] = y / this.mLat + this.lat0;
+      }
+    }
+
+    this.land = new Uint8Array(N);
+    this.height = new Float32Array(N);
+    for (const L of data.land) {
+      for (let i = 0; i < N; i++) {
+        if (pointInPoly(this.LON[i], this.LAT[i], L.poly)) {
+          this.land[i] = 1;
+          if (L.height > this.height[i]) this.height[i] = L.height;
+        }
+      }
+    }
+    if (opts.avoidShoal && data.shoal) {
+      for (let i = 0; i < N; i++)
+        if (pointInPoly(this.LON[i], this.LAT[i], data.shoal)) this.land[i] = 1;
+    }
+
+    this.distToLand = this._edt();
+    const buf = (opts.shoreBufferM === undefined) ? 60 : opts.shoreBufferM;
+    this.water = new Uint8Array(N);
+    for (let i = 0; i < N; i++)
+      this.water[i] = (!this.land[i] && this.distToLand[i] >= buf) ? 1 : 0;
+
+    /*
+      SI 10 obstructions -- hard.  Mirrors geo.BayGrid exactly: a water cell
+      within `obstructionMarginM` of a line is closed, and every one of the 16
+      grid edges whose segment crosses a line is removed from the graph
+      (`blocked[i*16+k]`).  Both are needed: the margin alone leaks under a
+      2:1 knight move, the edge test alone lets a route graze the line.
+      The lines arrive from Python already sealed into the land polygons.
+    */
+    this.blocked = new Uint8Array(N * NDIR);
+    this.obstructed = new Uint8Array(N);
+    this.obstructionLines = [];
+    const useObs = opts.obstructions !== false && data.obstructions;
+    const margin = opts.obstructionMarginM === undefined
+      ? (data.obstructionMarginM || 70) : opts.obstructionMarginM;
+    if (useObs) {
+      for (const ob of data.obstructions) {
+        const pts = ob.line.map(p => [(p[0] - this.lon0) * this.mLon, (p[1] - this.lat0) * this.mLat]);
+        this.obstructionLines.push({ key: ob.key, pts });
+        for (let q = 1; q < pts.length; q++) {
+          const ax = pts[q - 1][0], ay = pts[q - 1][1], bx = pts[q][0], by = pts[q][1];
+          const vx = bx - ax, vy = by - ay, L2 = Math.max(vx * vx + vy * vy, 1e-9);
+          for (let i = 0; i < N; i++) {
+            const px = this.X[i], py = this.Y[i];
+            let t = ((px - ax) * vx + (py - ay) * vy) / L2; t = t < 0 ? 0 : t > 1 ? 1 : t;
+            if (Math.hypot(px - (ax + t * vx), py - (ay + t * vy)) < margin) this.obstructed[i] = 1;
+            for (let k = 0; k < NDIR; k++) {
+              if (segmentsIntersect(px, py, px + OFFSETS[k][0] * resM, py + OFFSETS[k][1] * resM,
+                                    ax, ay, bx, by)) this.blocked[i * NDIR + k] = 1;
+            }
+          }
+        }
+      }
+      for (let i = 0; i < N; i++) if (this.obstructed[i]) this.water[i] = 0;
+    }
+
+    /* shipping zones (soft): index into data.shippingZones, -1 = none */
+    this.zone = new Int16Array(N).fill(-1);
+    const zones = data.shippingZones || [];
+    this.zoneWeight = new Float64Array(zones.length + 1).fill(1);
+    for (let k = 0; k < zones.length; k++) {
+      this.zoneWeight[k] = zones[k].weight;
+      for (let i = 0; i < N; i++)
+        if (this.zone[i] < 0 && pointInPoly(this.LON[i], this.LAT[i], zones[k].poly)) this.zone[i] = k;
+    }
+
+    this.nWater = 0;
+    for (let i = 0; i < N; i++) if (this.water[i]) this.nWater++;
+  }
+
+  /* does the straight track through xy points (metres) cross an obstruction line? */
+  trackCrossesObstruction(xy) {
+    for (let s = 1; s < xy.length; s++) {
+      for (const L of this.obstructionLines) {
+        for (let q = 1; q < L.pts.length; q++) {
+          if (segmentsIntersect(xy[s - 1][0], xy[s - 1][1], xy[s][0], xy[s][1],
+                                L.pts[q - 1][0], L.pts[q - 1][1], L.pts[q][0], L.pts[q][1])) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /*
+    Exact Euclidean distance to the nearest land cell, in metres
+    (Felzenszwalb & Huttenlocher's O(N) squared-distance transform, run down
+    the columns then across the rows).
+
+    This has to be exact, not a chamfer approximation: it feeds the shoreline
+    current relief, and a 4% error on diagonals moves the current field by
+    ~0.3 kt near shore -- which compounds into minutes over a four-hour beat.
+    The Python side uses scipy's exact transform, and the two must agree.
+  */
+  _edt() {
+    const nx = this.nx, ny = this.ny, res = this.res, N = this.N;
+    const INF = 1e20;
+    const f = new Float64Array(Math.max(nx, ny));
+    const dsq = new Float64Array(N);
+    for (let i = 0; i < N; i++) dsq[i] = this.land[i] ? 0 : INF;
+
+    const v = new Int32Array(Math.max(nx, ny));
+    const z = new Float64Array(Math.max(nx, ny) + 1);
+    const out = new Float64Array(Math.max(nx, ny));
+
+    const dt1d = (n) => {                     // in-place on f -> out
+      let k = 0;
+      v[0] = 0; z[0] = -INF; z[1] = INF;
+      for (let q = 1; q < n; q++) {
+        let s;
+        for (;;) {
+          s = ((f[q] + q * q) - (f[v[k]] + v[k] * v[k])) / (2 * q - 2 * v[k]);
+          if (s > z[k]) break;
+          k--;
+        }
+        k++; v[k] = q; z[k] = s; z[k + 1] = INF;
+      }
+      k = 0;
+      for (let q = 0; q < n; q++) {
+        while (z[k + 1] < q) k++;
+        const d = q - v[k];
+        out[q] = d * d + f[v[k]];
+      }
+    };
+
+    for (let c = 0; c < nx; c++) {            // columns
+      for (let r = 0; r < ny; r++) f[r] = dsq[r * nx + c];
+      dt1d(ny);
+      for (let r = 0; r < ny; r++) dsq[r * nx + c] = out[r];
+    }
+    for (let r = 0; r < ny; r++) {            // rows
+      const base = r * nx;
+      for (let c = 0; c < nx; c++) f[c] = dsq[base + c];
+      dt1d(nx);
+      for (let c = 0; c < nx; c++) dsq[base + c] = out[c];
+    }
+    const d = new Float32Array(N);
+    for (let i = 0; i < N; i++) d[i] = Math.sqrt(dsq[i]) * res;
+    return d;
+  }
+
+  idx(lon, lat) {
+    const x = (lon - this.lon0) * this.mLon, y = (lat - this.lat0) * this.mLat;
+    let c = Math.round((x - this.ox) / this.res - 0.5);
+    let r = Math.round((y - this.oy) / this.res - 0.5);
+    c = Math.max(0, Math.min(this.nx - 1, c));
+    r = Math.max(0, Math.min(this.ny - 1, r));
+    return r * this.nx + c;
+  }
+  /* containing cell if it is navigable, else the nearest cell that is */
+  idxWater(lon, lat) {
+    const i = this.idx(lon, lat);
+    if (this.water[i]) return i;
+    const nx = this.nx, ny = this.ny;
+    const r0 = (i / nx) | 0, c0 = i - r0 * nx;
+    for (let rad = 1; rad <= 12; rad++) {
+      let best = -1, bd = Infinity;
+      for (let dr = -rad; dr <= rad; dr++) for (let dc = -rad; dc <= rad; dc++) {
+        if (Math.max(Math.abs(dr), Math.abs(dc)) !== rad) continue;
+        const r = r0 + dr, c = c0 + dc;
+        if (r < 0 || r >= ny || c < 0 || c >= nx) continue;
+        const j = r * nx + c;
+        if (!this.water[j]) continue;
+        const d = dr * dr + dc * dc;
+        if (d < bd) { bd = d; best = j; }
+      }
+      if (best >= 0) return best;
+    }
+    return -1;
+  }
+  nearestWater(lon, lat) {
+    let best = -1, bd = Infinity;
+    const x = (lon - this.lon0) * this.mLon, y = (lat - this.lat0) * this.mLat;
+    for (let i = 0; i < this.N; i++) {
+      if (!this.water[i]) continue;
+      const dx = this.X[i] - x, dy = this.Y[i] - y, d = dx * dx + dy * dy;
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+  /*
+    Geodesic distance through water from a seed, in metres.
+
+    D must be Float64, not Float32: the heap keys are float64, and storing a
+    rounded float32 back into D makes the `d > D[i]` staleness test reject
+    valid pops, which silently truncates the search.  That bug reached only
+    772 of 3943 water cells and corrupted the current field's interpolation
+    weights.
+  */
+  waterDistance(lon, lat) {
+    const N = this.N, nx = this.nx, ny = this.ny, res = this.res;
+    const D = new Float64Array(N).fill(Infinity);
+    const s = this.nearestWater(lon, lat);
+    if (s < 0) return D;
+    D[s] = 0;
+    const heap = new MinHeap(1024);
+    heap.push(0, s);
+    const dr = [-1, 1, 0, 0, -1, -1, 1, 1], dc = [0, 0, -1, 1, -1, 1, -1, 1];
+    const w = [1, 1, 1, 1, Math.SQRT2, Math.SQRT2, Math.SQRT2, Math.SQRT2];
+    let it;
+    while ((it = heap.pop())) {
+      const i = it.val, d = it.key;
+      if (d > D[i]) continue;
+      const r = (i / nx) | 0, c = i - r * nx;
+      for (let k = 0; k < 8; k++) {
+        const rr = r + dr[k], cc = c + dc[k];
+        if (rr < 0 || rr >= ny || cc < 0 || cc >= nx) continue;
+        const j = rr * nx + cc;
+        if (!this.water[j]) continue;
+        const nd = d + w[k] * res;
+        if (nd < D[j]) { D[j] = nd; heap.push(nd, j); }
+      }
+    }
+    return D;
+  }
+}
+
+/* ----------------------------------------------------------- currents */
+class RefSeries {
+  constructor(t, v) { this.t = t; this.v = v; }
+  at(h) {
+    let x = h % 24; if (x < 0) x += 24;
+    const t = this.t, v = this.v, n = t.length;
+    if (x <= t[0]) {
+      const span = t[0] + 24 - t[n - 1];
+      const f = (x + 24 - t[n - 1]) / span;
+      return v[n - 1] + f * (v[0] - v[n - 1]);
+    }
+    if (x >= t[n - 1]) {
+      const span = t[0] + 24 - t[n - 1];
+      const f = (x - t[n - 1]) / span;
+      return v[n - 1] + f * (v[0] - v[n - 1]);
+    }
+    let lo = 0, hi = n - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (t[m] <= x) lo = m; else hi = m; }
+    const f = (x - t[lo]) / (t[hi] - t[lo]);
+    return v[lo] + f * (v[hi] - v[lo]);
+  }
+}
+
+class CurrentField {
+  /*
+    Two tiers.
+
+      measured : the 8 real NOAA current-prediction stations inside the race
+                 area.  Each brings its own harmonic series and its own mean
+                 flood/ebb set, straight from CO-OPS.
+      derived  : water NOAA does not instrument -- Bonita, the Marin shore,
+                 Raccoon Strait, the Berkeley Circle, and the two eddies that
+                 decide this race.  Each scales a named base station's signed
+                 series by a hand amplitude and set.  This tier is the
+                 editorial part of the model; it is also the tier to tune.
+
+    Both tiers blend by inverse-distance weighting over distance THROUGH
+    WATER, so Sausalito never borrows from the Cityfront across the headlands.
+  */
+  constructor(grid, data, series, opts) {
+    opts = opts || {};
+    const p = data.currentParams;
+    this.grid = grid;
+    this.series = series;                  // {stationId: RefSeries}
+    this.strength = opts.strength === undefined ? 1 : opts.strength;
+
+    this.zones = [];
+    for (const st of data.stations) {
+      if (!series[st.id]) continue;
+      this.zones.push({ name: st.name, kind: 'measured', base: st.id, lon: st.lon,
+                        lat: st.lat, ampFlood: 1, ampEbb: 1, dirFlood: st.dirFlood,
+                        dirEbb: st.dirEbb, lagMin: 0 });
+    }
+    for (const z of data.derivedZones) {
+      if (!series[z.base]) continue;
+      this.zones.push(Object.assign({ kind: 'derived' }, z));
+    }
+    if (!this.zones.length) throw new Error('no current stations available');
+
+    const N = grid.N;
+    const W = [], sum = new Float64Array(N);
+    for (const z of this.zones) {
+      const D = grid.waterDistance(z.lon, z.lat);
+      const w = new Float32Array(N);
+      for (let i = 0; i < N; i++) {
+        w[i] = isFinite(D[i]) ? 1 / Math.pow(D[i] + p.idwD0, p.idwPower) : 0;
+        sum[i] += w[i];
+      }
+      W.push(w);
+    }
+    for (let k = 0; k < W.length; k++)
+      for (let i = 0; i < N; i++) W[k][i] = sum[i] > 0 ? W[k][i] / sum[i] : 0;
+    this.w = W;
+
+    this.relief = new Float32Array(N);
+    for (let i = 0; i < N; i++)
+      this.relief[i] = p.shoreReliefFloor + (1 - p.shoreReliefFloor) *
+        Math.tanh(grid.distToLand[i] / p.shoreReliefL);
+
+    this._u = new Float32Array(N);
+    this._v = new Float32Array(N);
+  }
+
+  nZonesMeasured() { return this.zones.filter(z => z.kind === 'measured').length; }
+
+  at(t) {
+    const N = this.grid.N, u = this._u, v = this._v;
+    u.fill(0); v.fill(0);
+    for (let k = 0; k < this.zones.length; k++) {
+      const z = this.zones[k];
+      const s = this.series[z.base].at(t - z.lagMin / 60);
+      const flood = s >= 0;
+      const mag = flood ? z.ampFlood * s : z.ampEbb * (-s);
+      const ang = (flood ? z.dirFlood : z.dirEbb) * D2R;
+      const uz = mag * Math.sin(ang), vz = mag * Math.cos(ang);
+      const w = this.w[k];
+      for (let i = 0; i < N; i++) { u[i] += uz * w[i]; v[i] += vz * w[i]; }
+    }
+    const f = this.strength;
+    for (let i = 0; i < N; i++) { const g = this.relief[i] * f; u[i] *= g; v[i] *= g; }
+    return { u, v };
+  }
+
+  sample(t, lon, lat) {
+    const { u, v } = this.at(t), i = this.grid.idxWater(lon, lat);
+    return { u: u[i], v: v[i], kt: Math.hypot(u[i], v[i]),
+             set: ((Math.atan2(u[i], v[i]) * R2D) % 360 + 360) % 360 };
+  }
+}
+
+/* --------------------------------------------------------------- wind */
+function seaBreeze(p, t) {
+  const { baseKt, peakKt, tOnset, tPeak, tHold, tOff } = p;
+  if (t < tOnset) return baseKt;
+  if (t < tPeak) {
+    const f = (t - tOnset) / Math.max(tPeak - tOnset, 1e-6);
+    return baseKt + (peakKt - baseKt) * 0.5 * (1 - Math.cos(Math.PI * Math.min(Math.max(f, 0), 1)));
+  }
+  if (t < tHold) return peakKt;
+  if (t < tOff) {
+    const f = (t - tHold) / Math.max(tOff - tHold, 1e-6);
+    return peakKt + (baseKt - peakKt) * 0.5 * (1 - Math.cos(Math.PI * Math.min(Math.max(f, 0), 1)));
+  }
+  return baseKt;
+}
+
+const DEFAULT_BREEZE = { baseKt: 8, peakKt: 19, tOnset: 10, tPeak: 15.5, tHold: 18, tOff: 21 };
+
+class WindField {
+  /*
+    Mean strength comes from `profile.mean(t)` -- either the parametric sea
+    breeze, or a forecast-driven profile anchored to live anemometer
+    observations (see Live.buildProfile).  The spatial structure (Gate
+    acceleration, the slot, the ray-marched terrain shadow) multiplies it and
+    is normalised to unit mean over water, so `mean(t)` means what it says.
+  */
+  constructor(grid, data, breeze, opts) {
+    opts = opts || {};
+    const p = data.windParams;
+    this.grid = grid;
+    this.breeze = Object.assign({}, DEFAULT_BREEZE, breeze || {});
+    this.profile = (opts.profile && typeof opts.profile.mean === 'function')
+      ? opts.profile : { mean: (t) => seaBreeze(this.breeze, t) };
+    this.dirOffset = 0;          // live veer correction, radians
+    this.speedScale = opts.speedScale === undefined ? 1 : opts.speedScale;
+    const N = grid.N;
+    const dirShift = (opts.dirShiftDeg || 0);
+
+    const pts = data.windPoints;
+    const mult = new Float32Array(N), cx = new Float32Array(N), sx = new Float32Array(N);
+    const sumw = new Float64Array(N);
+    for (const q of pts) {
+      const px = (q.lon - grid.lon0) * grid.mLon, py = (q.lat - grid.lat0) * grid.mLat;
+      const a = (q.dir + dirShift) * D2R, ca = Math.cos(a), sa = Math.sin(a);
+      for (let i = 0; i < N; i++) {
+        const d = Math.hypot(grid.X[i] - px, grid.Y[i] - py);
+        const w = 1 / Math.pow(d + p.idwD0, p.idwPower);
+        sumw[i] += w; mult[i] += w * q.mult; cx[i] += w * ca; sx[i] += w * sa;
+      }
+    }
+    this.mult = mult; this.dirFrom = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      mult[i] /= sumw[i];
+      this.dirFrom[i] = Math.atan2(sx[i] / sumw[i], cx[i] / sumw[i]);
+    }
+
+    /* directional terrain shadow, ray-marched upwind */
+    const lee = new Float32Array(N).fill(1);
+    const nSteps = Math.max(1, Math.floor(p.leeMax / grid.res));
+    for (let i = 0; i < N; i++) {
+      const ux = Math.sin(this.dirFrom[i]), uy = Math.cos(this.dirFrom[i]);
+      let hitD = -1, hitH = 0;
+      for (let s = 1; s <= nSteps; s++) {
+        const d = s * grid.res;
+        let c = Math.round((grid.X[i] + ux * d - grid.ox) / grid.res - 0.5);
+        let r = Math.round((grid.Y[i] + uy * d - grid.oy) / grid.res - 0.5);
+        if (c < 0) c = 0; else if (c >= grid.nx) c = grid.nx - 1;
+        if (r < 0) r = 0; else if (r >= grid.ny) r = grid.ny - 1;
+        const j = r * grid.nx + c;
+        if (grid.land[j]) { hitD = d; hitH = grid.height[j]; break; }
+      }
+      if (hitD > 0 && hitH > 0) {
+        const reach = Math.min(p.leePerHeight * hitH, p.leeMax);
+        const deficit = p.leeDeficit * Math.min(Math.max(hitH / p.leeHRef, 0), 1);
+        const frac = Math.min(Math.max(hitD / Math.max(reach, 1), 0), 1);
+        lee[i] = 1 - deficit * (1 - Math.pow(frac, p.leeExp));
+      }
+    }
+    this.lee = lee;
+
+    let acc = 0, cnt = 0;
+    for (let i = 0; i < N; i++) if (grid.water[i]) { acc += mult[i] * lee[i]; cnt++; }
+    const mean = acc / Math.max(cnt, 1);
+    this.struct = new Float32Array(N);
+    for (let i = 0; i < N; i++) this.struct[i] = mult[i] * lee[i] / mean;
+    this._s = new Float32Array(N);
+  }
+  at(t) {
+    const s = this.meanAt(t);
+    const out = this._s;
+    for (let i = 0; i < this.grid.N; i++) out[i] = s * this.struct[i];
+    if (this.dirOffset !== 0) {
+      if (!this._dirShifted) this._dirShifted = new Float32Array(this.grid.N);
+      for (let i = 0; i < this.grid.N; i++)
+        this._dirShifted[i] = this.dirFrom[i] + this.dirOffset;
+      return { tws: out, twd: this._dirShifted };
+    }
+    return { tws: out, twd: this.dirFrom };
+  }
+  meanAt(t) { return this.profile.mean(t) * this.speedScale; }
+  sample(t, lon, lat) {
+    const w = this.at(t), i = this.grid.idxWater(lon, lat);
+    return { kt: w.tws[i], from: ((w.twd[i] * R2D) % 360 + 360) % 360 };
+  }
+  /* structural multiplier at a point -- used to turn a local observation into
+     a domain-mean estimate */
+  structAt(lon, lat) { return this.struct[this.grid.idxWater(lon, lat)]; }
+  dirAt(lon, lat) { return this.dirFrom[this.grid.idxWater(lon, lat)] + this.dirOffset; }
+}
+
+/* -------------------------------------------------------------- polar */
+class Polar {
+  constructor(data, scale) {
+    this.tws = data.polar.tws; this.twa = data.polar.twa;
+    this.scale = scale === undefined ? 1 : scale;
+    this.sp = data.polar.speed;
+    this.name = data.polar.name;
+    /* dense lookup table: the router evaluates this ~4000 times per cell, so
+       the bilinear walk below is precomputed once onto a regular grid. */
+    this.LUT_NA = 181;                       // TWA 0..180 in 1 deg
+    this.LUT_NW = 121;                       // TWS 0..30 in 0.25 kt
+    this.lut = new Float32Array(this.LUT_NA * this.LUT_NW);
+    for (let iw = 0; iw < this.LUT_NW; iw++) {
+      const w = iw * 0.25;
+      for (let ia = 0; ia < this.LUT_NA; ia++)
+        this.lut[iw * this.LUT_NA + ia] = this._interp(ia, w);
+    }
+  }
+  /* fast path used by the router */
+  fast(twaDeg, tws) {
+    let a = twaDeg % 360; if (a < 0) a += 360; if (a > 180) a = 360 - a;
+    let w = tws * 4; if (w < 0) w = 0; else if (w > 120) w = 120;
+    const iw = w | 0, fw = w - iw, ia = a | 0, fa = a - ia;
+    const iw2 = iw < 120 ? iw + 1 : iw, ia2 = ia < 180 ? ia + 1 : ia;
+    const L = this.lut, NA = this.LUT_NA;
+    const v = L[iw * NA + ia] * (1 - fw) * (1 - fa) + L[iw2 * NA + ia] * fw * (1 - fa)
+            + L[iw * NA + ia2] * (1 - fw) * fa + L[iw2 * NA + ia2] * fw * fa;
+    return v * this.scale;
+  }
+  at(twaDeg, tws) { return this.fast(twaDeg, tws); }
+  _interp(twaDeg, tws) {
+    let a = Math.abs(((twaDeg + 180) % 360 + 360) % 360 - 180);
+    const T = this.tws, A = this.twa;
+    let w = Math.min(Math.max(tws, T[0]), T[T.length - 1]);
+    let i = 0; while (i < T.length - 2 && T[i + 1] < w) i++;
+    let j = 0; while (j < A.length - 2 && A[j + 1] < a) j++;
+    const fw = (w - T[i]) / (T[i + 1] - T[i]);
+    const fa = (a - A[j]) / (A[j + 1] - A[j]);
+    const s = this.sp;
+    const v = s[i][j] * (1 - fw) * (1 - fa) + s[i + 1][j] * fw * (1 - fa)
+            + s[i][j + 1] * (1 - fw) * fa + s[i + 1][j + 1] * fw * fa;
+    return Math.max(v, 0);
+  }
+  bestVMG(tws, upwind) {
+    let bestA = 0, bestV = 0, best = upwind ? -1e9 : 1e9;
+    for (let a = 20; a <= 180; a += 0.5) {
+      const v = this.at(a, tws), g = v * Math.cos(a * D2R);
+      if (upwind ? g > best : g < best) { best = g; bestA = a; bestV = v; }
+    }
+    return { twa: bestA, bs: bestV, vmg: Math.abs(best) };
+  }
+}
+
+/*
+  Sea state.  Mirrors bonita/polars.py chop_factor exactly.
+
+    wind-against-tide : k is the fractional loss per knot of fully opposed
+                        current AT THE BEAT ANGLE.  3 kt dead against in 20 kt
+                        costs ~19% beating -- what the Gate does to this boat.
+                        A run through the same chop keeps `runFloor` of that,
+                        because the bow stops and the kite collapses.
+    wind-only chop    : the Bay makes its own slop above ~18 kt regardless of
+                        the tide.
+*/
+function chopFactor(twdFrom, tws, cu, cv, cogDeg, k, opts) {
+  k = (k === undefined) ? 0.045 : k;
+  opts = opts || {};
+  const twaCut = opts.twaCut === undefined ? 95 : opts.twaCut;
+  const beatRef = opts.beatRef === undefined ? 40 : opts.beatRef;
+  const runFloor = opts.runFloor === undefined ? 0.25 : opts.runFloor;
+  const windK = opts.windChopK === undefined ? 0.05 : opts.windChopK;
+  const windT = opts.windChopTws === undefined ? 18 : opts.windChopTws;
+
+  const wx = -Math.sin(twdFrom), wy = -Math.cos(twdFrom);
+  const cs = Math.hypot(cu, cv);
+  let opp = 0;
+  if (cs > 1e-6) opp = Math.max(0, Math.min(1, -((cu / cs) * wx + (cv / cs) * wy)));
+  const twa = Math.abs(((cogDeg - twdFrom * R2D + 180) % 360 + 360) % 360 - 180);
+  let w = Math.max(0, Math.min(1, (twaCut - twa) / Math.max(twaCut - beatRef, 1e-6)));
+  if (w < runFloor) w = runFloor;
+  const gain = Math.max(0.4, Math.min(1.6, tws / 15));
+  let loss = k * gain * w * opp * cs;
+  loss += windK * w * Math.max(0, Math.min(1, (tws - windT) / 10));
+  return Math.max(0.55, Math.min(1, 1 - loss));
+}
+
+/* ------------------------------------------------------------- router */
+
+class Router {
+  constructor(grid, windField, currentField, polar, opts) {
+    opts = opts || {};
+    this.g = grid; this.wf = windField; this.cf = currentField; this.polar = polar;
+    this.dtBin = (opts.timeBinMin || 10) / 60;
+    this.tackPen = (opts.tackPenaltyS === undefined ? 14 : opts.tackPenaltyS) / 3600;
+    this.gybePen = (opts.gybePenaltyS === undefined ? 9 : opts.gybePenaltyS) / 3600;
+    this.minSog = opts.minSogKt || 0.15;
+    this.chopK = opts.chopK === undefined ? 0.045 : opts.chopK;
+    /* An edge is priced with the field frozen at its departure bin.  Allowing
+       an edge to run for many bins lets the router exploit stale water -- it
+       will "sail" one cell at 0.18 kt for 100 minutes through a flood that has
+       long since eased.  That is waiting, not sailing, and this formulation
+       cannot represent waiting, so it is refused instead.  See holdAdvice(). */
+    this.maxEdgeH = (opts.maxEdgeBins === undefined ? 3 : opts.maxEdgeBins) * this.dtBin;
+    this.currentScale = opts.currentScale === undefined ? 1 : opts.currentScale;
+    /* Soft shipping-lane cost (SI 9.1): time spent on an edge that enters a
+       zone cell is multiplied by the zone weight in the search objective
+       only; real time is carried alongside and is what gets reported.
+       laneCost:false keeps the crossing flags and charges nothing. */
+    this.laneCost = opts.laneCost !== false;
+    this.zoneW = new Float64Array(grid.zoneWeight.length).fill(1);
+    if (this.laneCost) this.zoneW.set(grid.zoneWeight);
+
+    const res = grid.res;
+    this.legNm = new Float64Array(NDIR);
+    this.gx = new Float64Array(NDIR); this.gy = new Float64Array(NDIR);
+    this.cog = new Float64Array(NDIR);
+    this.stepIdx = new Int32Array(NDIR);
+    for (let k = 0; k < NDIR; k++) {
+      const dx = OFFSETS[k][0] * res, dy = OFFSETS[k][1] * res;
+      const L = Math.hypot(dx, dy);
+      this.legNm[k] = L / 1852;
+      this.gx[k] = dx / L; this.gy[k] = dy / L;
+      this.cog[k] = ((Math.atan2(dx, dy) * R2D) % 360 + 360) % 360;
+      this.stepIdx[k] = OFFSETS[k][1] * grid.nx + OFFSETS[k][0];
+    }
+    const NS = opts.headingSamples || 180;
+    this.th = new Float64Array(NS); this.sinT = new Float64Array(NS);
+    this.cosT = new Float64Array(NS); this.thDeg = new Float64Array(NS);
+    for (let i = 0; i < NS; i++) {
+      const a = 2 * Math.PI * i / NS;
+      this.th[i] = a; this.sinT[i] = Math.sin(a); this.cosT[i] = Math.cos(a);
+      this.thDeg[i] = a * R2D;
+    }
+    this.NS = NS;
+    this._vx = new Float64Array(NS); this._vy = new Float64Array(NS);
+    this.fieldCache = new Map();
+    this.edgeCache = new Map();
+    this._edgeBuf = new Float64Array(NDIR * 2);
+  }
+
+  fields(t) {
+    const b = Math.floor(t / this.dtBin);
+    let hit = this.fieldCache.get(b);
+    if (!hit) {
+      const tb = (b + 0.5) * this.dtBin;
+      const w = this.wf.at(tb), c = this.cf.at(tb);
+      hit = { bin: b, tws: Float32Array.from(w.tws), twd: w.twd,
+              cu: Float32Array.from(c.u), cv: Float32Array.from(c.v) };
+      if (this.currentScale !== 1) {
+        for (let i = 0; i < hit.cu.length; i++) { hit.cu[i] *= this.currentScale; hit.cv[i] *= this.currentScale; }
+      }
+      this.fieldCache.set(b, hit);
+    }
+    return hit;
+  }
+
+  /* SOG on each of the 16 grid directions from cell i at time t */
+  edgeSpeeds(i, t) {
+    const F = this.fields(t);
+    const key = i * 100000 + (F.bin + 50000);
+    let hit = this.edgeCache.get(key);
+    if (hit) return hit;
+
+    const w = F.tws[i], wd = F.twd[i], cu = F.cu[i], cv = F.cv[i];
+    const NS = this.NS, vx = this._vx, vy = this._vy;
+    const wdDeg = wd * R2D;
+    for (let s = 0; s < NS; s++) {
+      const twa = this.thDeg[s] - wdDeg;
+      let bs = this.polar.at(twa, w);
+      bs *= chopFactor(wd, w, cu, cv, this.thDeg[s], this.chopK);
+      vx[s] = bs * this.sinT[s] + cu;
+      vy[s] = bs * this.cosT[s] + cv;
+    }
+    const sog = new Float64Array(NDIR);
+    const hd = new Float64Array(NDIR);
+    for (let k = 0; k < NDIR; k++) {
+      const gx = this.gx[k], gy = this.gy[k];
+      let best = -Infinity, bestH = NaN;
+      let prevCross = vx[NS - 1] * gy - vy[NS - 1] * gx;
+      let prevDot = vx[NS - 1] * gx + vy[NS - 1] * gy;
+      for (let s = 0; s < NS; s++) {
+        const cross = vx[s] * gy - vy[s] * gx;
+        const dot = vx[s] * gx + vy[s] * gy;
+        if ((prevCross <= 0 && cross > 0) || (prevCross >= 0 && cross < 0)) {
+          const den = prevCross - cross;
+          let f = Math.abs(den) > 1e-12 ? prevCross / den : 0;
+          f = f < 0 ? 0 : f > 1 ? 1 : f;
+          const v = prevDot * (1 - f) + dot * f;
+          if (v > best) {
+            best = v;
+            bestH = ((this.thDeg[(s - 1 + NS) % NS] + f * (360 / NS)) % 360 + 360) % 360;
+          }
+        }
+        prevCross = cross; prevDot = dot;
+      }
+      /* refuse edges that would take longer than the field is valid for */
+      if (best > this.minSog && this.legNm[k] / best > this.maxEdgeH) best = -1;
+      sog[k] = best > this.minSog ? best : -1;
+      hd[k] = bestH;
+    }
+    hit = { sog, heading: hd, twd: wd, tws: w, cu, cv };
+    this.edgeCache.set(key, hit);
+    return hit;
+  }
+
+  turnPenalty(iIn, iOut, wd) {
+    if (iIn === START_DIR || iIn === iOut) return 0;
+    const wdDeg = wd * R2D;
+    const ai = ((this.cog[iIn] - wdDeg + 180) % 360 + 360) % 360 - 180;
+    const ao = ((this.cog[iOut] - wdDeg + 180) % 360 + 360) % 360 - 180;
+    if (ai * ao < 0) {
+      /* which axis it crossed is what tells a tack from a gybe: the two angles
+         from the wind sum to < 180 through head-to-wind, > 180 through dead
+         downwind. */
+      return (Math.abs(ai) + Math.abs(ao) < 180) ? this.tackPen : this.gybePen;
+    }
+    return 0;
+  }
+
+  route(startLL, endLL, t0, opts) {
+    opts = opts || {};
+    const g = this.g, nx = g.nx, ny = g.ny, N = g.N;
+    const forbid = opts.forbid || null;
+    const okCell = (i) => g.water[i] && (!forbid || !forbid[i]);
+    const s = g.nearestWater(startLL[0], startLL[1]);
+    const e = g.nearestWater(endLL[0], endLL[1]);
+    if (s < 0 || e < 0) return { ok: false, note: 'endpoint not navigable' };
+    /* Do NOT relocate an endpoint into the corridor.  Silently moving the
+       start to the nearest in-lane cell made constrained lanes come out FASTER
+       than the unconstrained optimum, which is impossible, and would have sent
+       the boat to the wrong side of the Bay. */
+    if (forbid && !okCell(s))
+      return { ok: false, note: 'you are outside this lane' };
+    if (forbid && !okCell(e))
+      return { ok: false, note: 'the mark is outside this lane' };
+
+    const best = new Float64Array(N * NSTATE).fill(Infinity);   // cost labels
+    const treal = new Float64Array(N * NSTATE).fill(Infinity);  // real time at label
+    const prev = new Int32Array(N * NSTATE).fill(-1);
+    best[s * NSTATE + START_DIR] = t0;
+    treal[s * NSTATE + START_DIR] = t0;
+    const heap = new MinHeap(1 << 15);
+    heap.push(t0, s * NSTATE + START_DIR);
+    const blocked = g.blocked, zone = g.zone, zw = this.zoneW, nz = zw.length - 1;
+    let goal = -1, goalT = Infinity, goalK = Infinity;
+    let pops = 0;
+    const cap = opts.maxPops || 4e6;
+
+    let it;
+    while ((it = heap.pop())) {
+      const st = it.val, k = it.key;
+      if (k > best[st] + 1e-12) continue;
+      const cell = (st / NSTATE) | 0, di = st - cell * NSTATE;
+      const t = treal[st];
+      if (cell === e) { goal = st; goalT = t; goalK = k; break; }
+      if (++pops > cap) break;
+      const E = this.edgeSpeeds(cell, t);
+      const r = (cell / nx) | 0, c = cell - r * nx;
+      const bb = cell * NDIR;
+      for (let d = 0; d < NDIR; d++) {
+        if (blocked[bb + d]) continue;
+        const sog = E.sog[d];
+        if (sog <= 0) continue;
+        const rr = r + OFFSETS[d][1], cc = c + OFFSETS[d][0];
+        if (rr < 0 || rr >= ny || cc < 0 || cc >= nx) continue;
+        const j = rr * nx + cc;
+        if (!okCell(j)) continue;
+        const dt = this.legNm[d] / sog + this.turnPenalty(di, d, E.twd);
+        const zj = zone[j];
+        const nk = k + dt * zw[zj < 0 ? nz : zj];
+        const ns = j * NSTATE + d;
+        if (nk < best[ns] - 1e-12) { best[ns] = nk; treal[ns] = t + dt; prev[ns] = st; heap.push(nk, ns); }
+      }
+    }
+    if (goal < 0) return { ok: false, note: 'no route found' };
+
+    const path = [];
+    let st = goal;
+    while (st >= 0) {
+      const cell = (st / NSTATE) | 0;
+      path.push({ i: cell, t: treal[st], lon: g.LON[cell], lat: g.LAT[cell],
+                  dir: st - cell * NSTATE });
+      st = prev[st];
+    }
+    path.reverse();
+    return { ok: true, tStart: t0, tEnd: goalT, elapsed: goalT - t0, path,
+             costEnd: goalK, lanePenalty: goalK - goalT,
+             zoneCrossings: zoneCrossings(g, path) };
+  }
+
+  _nearestOk(ll, okCell) {
+    const g = this.g;
+    const x = (ll[0] - g.lon0) * g.mLon, y = (ll[1] - g.lat0) * g.mLat;
+    let best = -1, bd = Infinity;
+    for (let i = 0; i < g.N; i++) {
+      if (!okCell(i)) continue;
+      const dx = g.X[i] - x, dy = g.Y[i] - y, d = dx * dx + dy * dy;
+      if (d < bd) { bd = d; best = i; }
+    }
+    return best;
+  }
+}
+
+/* Where and when a path is inside a shipping zone (merged runs, path order).
+   Mirrors router.zone_crossings. */
+function zoneCrossings(grid, path) {
+  const zones = grid.data.shippingZones || [];
+  const out = [];
+  let cur = null;
+  for (const p of path) {
+    const k = grid.zone[p.i];
+    if (cur && k === cur.k) { cur.tOut = p.t; continue; }
+    if (cur) { out.push(cur); cur = null; }
+    if (k >= 0) cur = { k, key: zones[k].key, zone: zones[k].name, kind: zones[k].kind, tIn: p.t, tOut: p.t };
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
+/* ---------------------------------------------------------- live data */
+const COOPS = 'https://api.tidesandcurrents.noaa.gov/api/prod/datagetter';
+const OPENMETEO = 'https://api.open-meteo.com/v1/forecast';
+
+function angDiffDeg(a, b) { return ((a - b + 540) % 360) - 180; }
+
+const Live = {
+  cacheKey: (k) => 'bonita.cache.' + k,
+
+  cacheGet(k, maxAgeMs) {
+    try {
+      const raw = localStorage.getItem(Live.cacheKey(k));
+      if (!raw) return null;
+      const o = JSON.parse(raw);
+      if (maxAgeMs && Date.now() - o.at > maxAgeMs) return null;
+      return o;
+    } catch (e) { return null; }
+  },
+  cacheSet(k, value) {
+    try { localStorage.setItem(Live.cacheKey(k), JSON.stringify({ at: Date.now(), value })); }
+    catch (e) { /* quota or private mode -- caching is best effort */ }
+  },
+
+  /* --- NOAA harmonic current predictions, one call per station ---------- */
+  async fetchCurrents(dateStr, stationIds, opts) {
+    opts = opts || {};
+    const ymd = dateStr.replace(/-/g, '');
+    const key = 'cur.' + ymd;
+    const cached = Live.cacheGet(key, opts.maxAgeMs || 30 * 24 * 3600e3);
+    const have = cached && cached.value || {};
+    const out = {}, fresh = {};
+    let fetched = 0, failed = 0;
+    await Promise.all(stationIds.map(async (id) => {
+      if (have[id] && !opts.force) { out[id] = have[id]; return; }
+      try {
+        const url = `${COOPS}?product=currents_predictions&application=bonita_router`
+          + `&begin_date=${ymd}&end_date=${ymd}&station=${id}`
+          + `&time_zone=lst_ldt&interval=30&units=english&format=json`;
+        const r = await fetch(url);
+        const j = await r.json();
+        const cp = j.current_predictions && j.current_predictions.cp;
+        if (!cp || !cp.length) throw new Error('no data');
+        const t = [], v = [];
+        for (const row of cp) {
+          const hm = row.Time.slice(11);
+          t.push(+hm.slice(0, 2) + (+hm.slice(3, 5)) / 60);
+          v.push(+row.Velocity_Major);
+        }
+        out[id] = { t, v, dirFlood: +cp[0].meanFloodDir, dirEbb: +cp[0].meanEbbDir };
+        fresh[id] = out[id]; fetched++;
+      } catch (e) { failed++; if (have[id]) out[id] = have[id]; }
+    }));
+    if (fetched) Live.cacheSet(key, Object.assign({}, have, fresh));
+    return { series: out, fetched, failed, cachedOnly: fetched === 0 };
+  },
+
+  /* --- live observed wind from CO-OPS anemometers ----------------------- */
+  async fetchWindObs(metStations) {
+    const obs = [];
+    await Promise.all(metStations.map(async (m) => {
+      try {
+        const url = `${COOPS}?product=wind&application=bonita_router&date=latest`
+          + `&station=${m.id}&time_zone=lst_ldt&units=english&format=json`;
+        const r = await fetch(url);
+        const j = await r.json();
+        const d = j.data && j.data[j.data.length - 1];
+        if (!d) throw new Error('no data');
+        /* CO-OPS `units=english` is documented as "fahrenheit, feet, KNOTS".
+           An earlier version multiplied by 0.868976 (the mph->kt factor) and
+           read every anemometer 13% low, which cost ~18 min of elapsed time. */
+        const kt = (d.s === '' || d.s == null) ? NaN : +d.s;
+        const gust = (d.g === '' || d.g == null) ? NaN : +d.g;
+        if (!isFinite(kt)) throw new Error('empty reading');
+        obs.push({ id: m.id, name: m.name, lat: m.lat, lon: m.lon,
+                   kt, gustKt: gust, from: +d.d, time: d.t });
+      } catch (e) { /* station offline; the others still anchor the field */ }
+    }));
+    if (obs.length) Live.cacheSet('windobs', obs);
+    else { const c = Live.cacheGet('windobs', 6 * 3600e3); if (c) return { obs: c.value, stale: true }; }
+    return { obs, stale: false };
+  },
+
+  /* --- gridded forecast ------------------------------------------------ */
+  async fetchWindForecast(dateStr, pts) {
+    const key = 'fc.' + dateStr;
+    try {
+      const lat = pts.map(p => p[1].toFixed(3)).join(',');
+      const lon = pts.map(p => p[0].toFixed(3)).join(',');
+      const url = `${OPENMETEO}?latitude=${lat}&longitude=${lon}`
+        + `&hourly=wind_speed_10m,wind_direction_10m&wind_speed_unit=kn`
+        + `&timezone=America%2FLos_Angeles&start_date=${dateStr}&end_date=${dateStr}`;
+      const r = await fetch(url);
+      let j = await r.json();
+      if (!Array.isArray(j)) j = [j];
+      const times = j[0].hourly.time.map(s => +s.slice(11, 13) + (+s.slice(14, 16)) / 60);
+      const val = { times, speed: j.map(d => d.hourly.wind_speed_10m),
+                    dir: j.map(d => d.hourly.wind_direction_10m),
+                    lat: pts.map(p => p[1]), lon: pts.map(p => p[0]) };
+      Live.cacheSet(key, val);
+      return { fc: val, stale: false };
+    } catch (e) {
+      const c = Live.cacheGet(key, 7 * 24 * 3600e3);
+      return c ? { fc: c.value, stale: true } : { fc: null, stale: true };
+    }
+  },
+
+  /*
+    Build the mean-strength profile the wind field runs on.
+
+      forecast  sets the SHAPE through the day (spatial mean of the grid
+                points, divided by nothing -- the field structure carries the
+                spatial part).
+      obs       sets the LEVEL right now: each anemometer reading is divided
+                by the field's structural multiplier at that spot to get an
+                implied domain mean, and those are averaged.
+      the anchor correction relaxes back to the raw forecast over
+      `relaxHours`, because an observation tells you about now, not 16:00.
+  */
+  buildProfile(windField, opts) {
+    opts = opts || {};
+    const fc = opts.forecast, obsIn = opts.obs || [], tNow = opts.tNow;
+    const relax = opts.relaxHours || 3;
+    const dom = opts.domain;
+    const fallback = (t) => seaBreeze(windField.breeze, t);
+
+    let fcMean = null;
+    if (fc && fc.times && fc.times.length) {
+      const n = fc.times.length, m = new Float64Array(n);
+      for (let k = 0; k < n; k++) {
+        let s = 0, c = 0;
+        for (let p = 0; p < fc.speed.length; p++) {
+          const v = fc.speed[p][k];
+          if (v != null && isFinite(v)) { s += v; c++; }
+        }
+        m[k] = c ? s / c : NaN;
+      }
+      fcMean = (t) => {
+        const T = fc.times;
+        if (t <= T[0]) return m[0];
+        if (t >= T[n - 1]) return m[n - 1];
+        let lo = 0, hi = n - 1;
+        while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (T[mid] <= t) lo = mid; else hi = mid; }
+        const f = (t - T[lo]) / (T[hi] - T[lo]);
+        return m[lo] + f * (m[hi] - m[lo]);
+      };
+    }
+    const base = fcMean || fallback;
+
+    /*
+      Only anchor on anemometers that actually sit inside the model domain.
+      A station outside it resolves to a clamped edge cell, so its structural
+      multiplier is an artefact of the boundary rather than of its real
+      shelter -- and dividing a sheltered harbour reading by ~1.0 then pulls
+      the whole Bay's wind down by a third.
+    */
+    const obs = obsIn.filter(o => !dom ||
+      (o.lon > dom.lon_min && o.lon < dom.lon_max &&
+       o.lat > dom.lat_min && o.lat < dom.lat_max));
+
+    /* the observations describe the moment they were taken, not "now" */
+    let tObs = tNow;
+    const stamps = obs.map(o => o.time).filter(Boolean);
+    if (stamps.length) {
+      const hm = stamps[0].slice(11);
+      const h = +hm.slice(0, 2) + (+hm.slice(3, 5)) / 60;
+      if (isFinite(h)) tObs = h;
+    }
+
+    let anchor = 1, impliedNow = null, dirErr = null;
+    if (obs.length && tObs != null) {
+      const implied = [], dErr = [];
+      for (const o of obs) {
+        const st = windField.structAt(o.lon, o.lat);
+        if (isFinite(st) && st > 0.05 && isFinite(o.kt)) implied.push(o.kt / st);
+        const md = windField.dirAt(o.lon, o.lat);
+        if (isFinite(o.from) && isFinite(md) && o.kt > 3)
+          dErr.push(angDiffDeg(o.from, md * R2D));
+      }
+      if (implied.length) {
+        implied.sort((a, b) => a - b);
+        const n = implied.length;
+        impliedNow = n % 2 ? implied[(n - 1) / 2]
+                           : 0.5 * (implied[n / 2 - 1] + implied[n / 2]);
+        const b = base(tObs);
+        if (b > 0.5) anchor = impliedNow / b;
+      }
+      if (dErr.length) {
+        let sx = 0, cx = 0;
+        for (const d of dErr) { sx += Math.sin(d * D2R); cx += Math.cos(d * D2R); }
+        const e = Math.atan2(sx / dErr.length, cx / dErr.length) * R2D;
+        if (isFinite(e)) dirErr = e;
+      }
+    }
+
+    const mean = (t) => {
+      const b = base(t);
+      if (anchor === 1 || tObs == null) return b;
+      return b * (1 + (anchor - 1) * Math.exp(-Math.abs(t - tObs) / relax));
+    };
+
+    return { mean, source: fcMean ? 'forecast' : 'parametric',
+             anchored: anchor !== 1, anchor, impliedNow, dirErr,
+             nObs: obs.length, nDropped: obsIn.length - obs.length, tObs };
+  },
+
+  /*
+    GPS check: what does the model think you should be doing right now, and
+    what are you actually doing?  Returns predicted SOG for your observed COG
+    at your observed position, and the ratio.  A persistent ratio away from 1
+    means the wind or the polar is off -- the UI offers to scale the wind by
+    it, which is the honest interpretation most of the time.
+  */
+  gpsCheck(router, lon, lat, tNow, cogDeg, sogKt) {
+    const g = router.g;
+    const i = g.idxWater(lon, lat);
+    if (i < 0) return { ok: false, reason: 'off the model grid' };
+    const F = router.fields(tNow);
+    const w = F.tws[i], wd = F.twd[i], cu = F.cu[i], cv = F.cv[i];
+    const NS = router.NS;
+    let best = -Infinity;
+    const gx = Math.sin(cogDeg * D2R), gy = Math.cos(cogDeg * D2R);
+    let prevCross = null, prevDot = null;
+    for (let s = 0; s <= NS; s++) {
+      const k = s % NS;
+      const twa = router.thDeg[k] - wd * R2D;
+      let bs = router.polar.at(twa, w);
+      bs *= chopFactor(wd, w, cu, cv, router.thDeg[k], router.chopK);
+      const vx = bs * router.sinT[k] + cu, vy = bs * router.cosT[k] + cv;
+      const cross = vx * gy - vy * gx, dot = vx * gx + vy * gy;
+      if (prevCross !== null &&
+          ((prevCross <= 0 && cross > 0) || (prevCross >= 0 && cross < 0))) {
+        const den = prevCross - cross;
+        let f = Math.abs(den) > 1e-12 ? prevCross / den : 0;
+        f = f < 0 ? 0 : f > 1 ? 1 : f;
+        const v = prevDot * (1 - f) + dot * f;
+        if (v > best) best = v;
+      }
+      prevCross = cross; prevDot = dot;
+    }
+    if (!isFinite(best) || best <= 0) return { ok: false, reason: 'course not sailable in the model' };
+    return { ok: true, predictedSog: best, observedSog: sogKt,
+             ratio: sogKt / best, tws: w, twdDeg: ((wd * R2D) % 360 + 360) % 360,
+             curKt: Math.hypot(cu, cv),
+             curSet: ((Math.atan2(cu, cv) * R2D) % 360 + 360) % 360 };
+  },
+};
+
+/* ------------------------------------------------------------ helpers */
+function trackNm(path, grid) {
+  let s = 0;
+  for (let k = 1; k < path.length; k++) {
+    const a = path[k - 1], b = path[k];
+    const dx = (b.lon - a.lon) * grid.mLon, dy = (b.lat - a.lat) * grid.mLat;
+    s += Math.hypot(dx, dy);
+  }
+  return s / 1852;
+}
+
+function hhmm(t) {
+  let x = ((t % 24) + 24) % 24;
+  let h = Math.floor(x), m = Math.round((x - h) * 60);
+  if (m === 60) { m = 0; h = (h + 1) % 24; }
+  return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+}
+
+function bearing(a, b, grid) {
+  const dx = (b[0] - a[0]) * grid.mLon, dy = (b[1] - a[1]) * grid.mLat;
+  return ((Math.atan2(dx, dy) * R2D) % 360 + 360) % 360;
+}
+function distNm(a, b, grid) {
+  const dx = (b[0] - a[0]) * grid.mLon, dy = (b[1] - a[1]) * grid.mLat;
+  return Math.hypot(dx, dy) / 1852;
+}
+
+root.BonitaModel = { Grid, CurrentField, WindField, Polar, Router, RefSeries, Live,
+                     MinHeap, seaBreeze, chopFactor, DEFAULT_BREEZE, OFFSETS,
+                     segmentsIntersect, zoneCrossings, pointInPoly,
+                     trackNm, hhmm, bearing, distNm, angDiffDeg, D2R, R2D };
+})(typeof globalThis !== 'undefined' ? globalThis : this);
+
+window.BONITA_DATA = {"meta":{"date":"2026-09-12","race":"BYC Big Windward-Leeward Regatta (PB / EASOM)","tz":"America/Los_Angeles","built":"2026-09-12T05:18:12.759914Z"},"domain":{"lon_min":-122.57,"lon_max":-122.295,"lat_min":37.77,"lat_max":37.92},"proj":{"lat0":37.85,"lon0":-122.42,"mPerDegLat":111132.0,"mPerDegLon":87900.48162075007},"marks":{"start":[-122.3548,37.8591],"finish":[-122.3548,37.8591],"bonita":[-122.54,37.811667],"easom":[-122.468,37.8415]},"land":[{"name":"marin","height":280.0,"poly":[[-122.61,37.92],[-122.56,37.905],[-122.545,37.89],[-122.537,37.872],[-122.535,37.86],[-122.539,37.845],[-122.539,37.832],[-122.5294,37.8158],[-122.522,37.8175],[-122.514,37.82],[-122.501,37.826],[-122.493,37.8272],[-122.489,37.829],[-122.483,37.8268],[-122.4785,37.8255],[-122.477,37.83],[-122.476,37.838],[-122.4775,37.843],[-122.479,37.848],[-122.4805,37.853],[-122.483,37.86],[-122.4855,37.865],[-122.481,37.869],[-122.474,37.87],[-122.469,37.8715],[-122.4645,37.8705],[-122.462,37.871],[-122.46,37.8735],[-122.456,37.874],[-122.45,37.876],[-122.446,37.88],[-122.453,37.888],[-122.46,37.896],[-122.47,37.91],[-122.56,37.94],[-122.64,37.94],[-122.64,37.9]]},{"name":"angel","height":240.0,"poly":[[-122.446,37.862],[-122.443,37.857],[-122.44,37.854],[-122.434,37.8515],[-122.427,37.8505],[-122.42,37.851],[-122.4165,37.8555],[-122.418,37.86],[-122.42,37.8655],[-122.424,37.87],[-122.431,37.871],[-122.438,37.868],[-122.44,37.869],[-122.444,37.866]]},{"name":"alcatraz","height":40.0,"poly":[[-122.4265,37.828],[-122.4225,37.8285],[-122.4195,37.827],[-122.421,37.8252],[-122.4255,37.8252]]},{"name":"treasure","height":8.0,"poly":[[-122.377,37.818],[-122.3745,37.83],[-122.37,37.8325],[-122.364,37.83],[-122.3628,37.8195],[-122.3745,37.8175]]},{"name":"yerba_buena","height":100.0,"poly":[[-122.3745,37.8175],[-122.3628,37.8195],[-122.36,37.813],[-122.362,37.8055],[-122.369,37.8035],[-122.373,37.809]]},{"name":"san_francisco","height":90.0,"poly":[[-122.4775,37.8105],[-122.47,37.8075],[-122.465,37.806],[-122.455,37.8065],[-122.443,37.8072],[-122.43,37.8082],[-122.4235,37.8078],[-122.418,37.809],[-122.41,37.809],[-122.402,37.805],[-122.396,37.799],[-122.3935,37.7955],[-122.388,37.786],[-122.387,37.778],[-122.38,37.7],[-122.52,37.7],[-122.5115,37.76],[-122.506,37.785],[-122.496,37.7885],[-122.483,37.793],[-122.479,37.802]]},{"name":"east_bay","height":15.0,"poly":[[-122.396,37.92],[-122.39,37.912],[-122.38,37.905],[-122.37,37.901],[-122.345,37.899],[-122.33,37.8985],[-122.323,37.899],[-122.3195,37.89],[-122.318,37.88],[-122.3175,37.871],[-122.3155,37.8655],[-122.314,37.86],[-122.3145,37.85],[-122.313,37.841],[-122.316,37.833],[-122.322,37.828],[-122.325,37.815],[-122.32,37.8],[-122.2,37.78],[-122.2,37.92]]},{"name":"brooks","height":50.0,"poly":[[-122.36,37.8985],[-122.35,37.899],[-122.348,37.896],[-122.358,37.8955]]}],"race":{"startH":11.083333333333334,"warningH":11.0,"timeLimitH":19.0},"courses":{"1":{"mark":"bonita","name":"YRA \"PB\" (Point Bonita)","approx_nm":20},"2":{"mark":"easom","name":"YRA 15 \"EASOM\" (Yellow Bluff)","approx_nm":15}},"yraMarks":{"DOC":[-122.34943,37.85767],"FOC":[-122.37667,37.865]},"obstructionMarginM":70.0,"obstructions":[{"key":"berkeley_pier","si":"10.1.a","name":"Berkeley Pier ruins (daymark Fl R 4s 15ft 4M '2') to Berkeley shore","status":"VERIFIED","line":[[-122.36055,37.84774],[-122.3307,37.85822],[-122.32702,37.85952],[-122.31768,37.86287],[-122.313,37.8645]]},{"key":"pt_blunt","si":"10.1.b","name":"Point Blunt buoy G '3' to Angel Island","status":"VERIFIED","line":[[-122.41744,37.85043],[-122.421557,37.852433]]},{"key":"alcatraz","si":"10.1.c","name":"Alcatraz Lighted Bell Buoy AZ (G/R/G, west end) to Alcatraz","status":"VERIFIED","line":[[-122.4282,37.82767],[-122.42429,37.828429]]},{"key":"h_beam","si":"10.1.d","name":"'H' beam piling off the old Water Quality Plant, W of StFYC, to shore","status":"ESTIMATED (+-100 m) -- not a charted aid","line":[[-122.4485,37.8076],[-122.448266,37.805088]]},{"key":"anita_rock","si":"10.1.e","name":"Anita Rock, its light and the yellow 'AR' buoy, to Crissy Field","status":"VERIFIED light; AR buoy position ESTIMATED from SI text","line":[[-122.4543,37.8089],[-122.45355,37.80833],[-122.453221,37.804799]]},{"key":"south_tower","si":"10.1.f","name":"Golden Gate Bridge South Tower to Fort Point (closes the inshore passage)","status":"VERIFIED","line":[[-122.47787,37.81401],[-122.477311,37.808707]]}],"shippingZones":[{"key":"msc_wb","kind":"lane","name":"Main Ship Channel westbound lane (33 CFR 167.405)","weight":1.1,"poly":[[-122.4979,37.8175],[-122.5226,37.808],[-122.5294,37.8052],[-122.5425,37.8],[-122.5705,37.7888],[-122.5879,37.7818],[-122.5864,37.779],[-122.5563,37.7884],[-122.5295,37.7974],[-122.5217,37.8],[-122.5171,37.8015],[-122.4949,37.8135]]},{"key":"msc_eb","kind":"lane","name":"Main Ship Channel eastbound lane (33 CFR 167.405)","weight":1.1,"poly":[[-122.4949,37.8135],[-122.5171,37.8015],[-122.5217,37.8],[-122.5295,37.7974],[-122.5563,37.7884],[-122.5717,37.7833],[-122.5701,37.7802],[-122.5626,37.7824],[-122.5295,37.792],[-122.5131,37.7968],[-122.5069,37.8],[-122.4934,37.807],[-122.4909,37.8083]]},{"key":"gg_pa","kind":"precautionary","name":"Golden Gate precautionary area","weight":1.05,"poly":[[-122.4909,37.8083],[-122.4979,37.8175],[-122.4844,37.8227],[-122.4793,37.8246],[-122.475,37.8274],[-122.4698,37.8313],[-122.4665,37.8291],[-122.4629,37.8265],[-122.4629,37.8141],[-122.4782,37.8142]]},{"key":"bay_wb","kind":"lane","name":"SF Bay westbound traffic lane (north of Alcatraz)","weight":1.1,"poly":[[-122.4629,37.8219],[-122.4628,37.8261],[-122.4462,37.8389],[-122.4392,37.8398],[-122.4231,37.8286],[-122.4256,37.8284],[-122.4238,37.8263]]},{"key":"bay_eb","kind":"lane","name":"SF Bay eastbound traffic lane (south of Alcatraz)","weight":1.1,"poly":[[-122.4629,37.8141],[-122.4629,37.8213],[-122.4238,37.8258],[-122.4204,37.8257],[-122.4202,37.8117],[-122.4397,37.8137]]},{"key":"central_pa","kind":"precautionary","name":"Central Bay precautionary area (flag only)","weight":1.0,"poly":[[-122.4202,37.812],[-122.4202,37.8266],[-122.4231,37.8286],[-122.4392,37.8398],[-122.4406,37.8462],[-122.4161,37.851],[-122.4161,37.8642],[-122.3965,37.8642],[-122.3965,37.8228],[-122.3672,37.8],[-122.3594,37.7839],[-122.385,37.7839],[-122.395,37.795],[-122.4,37.803],[-122.41,37.808]]}],"lanes":{"1":{"out":{"Cityfront":[[-122.3548,37.8591],[-122.39,37.833],[-122.425,37.812],[-122.462,37.81],[-122.478,37.816],[-122.54,37.81167]],"mid-Bay (Alcatraz)":[[-122.3548,37.8591],[-122.395,37.85],[-122.424,37.833],[-122.455,37.822],[-122.478,37.82],[-122.54,37.81167]],"Marin shore":[[-122.3548,37.8591],[-122.405,37.86],[-122.445,37.855],[-122.472,37.84],[-122.479,37.828],[-122.54,37.81167]]},"back":{"Marin shore":[[-122.54,37.81167],[-122.48,37.828],[-122.476,37.839],[-122.46,37.852],[-122.42,37.857],[-122.3548,37.8591]],"mid-Bay (Alcatraz)":[[-122.54,37.81167],[-122.478,37.82],[-122.44,37.829],[-122.405,37.848],[-122.3548,37.8591]],"Cityfront":[[-122.54,37.81167],[-122.478,37.816],[-122.44,37.811],[-122.4,37.825],[-122.37,37.852],[-122.3548,37.8591]]}},"2":{"out":{"south of Alcatraz":[[-122.3548,37.8591],[-122.39,37.833],[-122.425,37.814],[-122.445,37.818],[-122.46,37.832],[-122.468,37.8415]],"north of Alcatraz":[[-122.3548,37.8591],[-122.395,37.848],[-122.425,37.836],[-122.445,37.835],[-122.468,37.8415]],"Angel Island shore":[[-122.3548,37.8591],[-122.405,37.86],[-122.44,37.85],[-122.455,37.843],[-122.468,37.8415]],"Raccoon Strait":[[-122.3548,37.8591],[-122.4,37.878],[-122.435,37.876],[-122.46,37.866],[-122.468,37.8415]]},"back":{"Angel Island shore":[[-122.468,37.8415],[-122.455,37.843],[-122.44,37.85],[-122.405,37.86],[-122.3548,37.8591]],"north of Alcatraz":[[-122.468,37.8415],[-122.445,37.835],[-122.425,37.836],[-122.395,37.848],[-122.3548,37.8591]],"south of Alcatraz":[[-122.468,37.8415],[-122.46,37.832],[-122.445,37.818],[-122.425,37.814],[-122.39,37.833],[-122.3548,37.8591]],"Raccoon Strait":[[-122.468,37.8415],[-122.46,37.866],[-122.435,37.876],[-122.4,37.878],[-122.3548,37.8591]]}}},"laneHalfWidthM":1500.0,"shoal":[[-122.3175,37.88],[-122.33,37.879],[-122.335,37.87],[-122.333,37.86],[-122.32,37.852],[-122.314,37.856],[-122.3175,37.87]],"stations":[{"id":"SFB1201","name":"San Francisco Bay Entrance","lat":37.8106,"lon":-122.502,"dirFlood":61,"dirEbb":239},{"id":"SFB1202","name":"Golden Gate Bridge","lat":37.8292,"lon":-122.462,"dirFlood":52,"dirEbb":238},{"id":"SFB1203","name":"Golden Gate Bridge, 0.46 nm E","lat":37.8201,"lon":-122.473,"dirFlood":69,"dirEbb":257},{"id":"SFB1204","name":"Alcatraz Island, southwest of","lat":37.8143,"lon":-122.432,"dirFlood":86,"dirEbb":271},{"id":"SFB1205","name":"Pier 35, north of","lat":37.8142,"lon":-122.407,"dirFlood":106,"dirEbb":300},{"id":"SFB1206","name":"Pier 23","lat":37.8053,"lon":-122.3973,"dirFlood":143,"dirEbb":323},{"id":"SFB1209","name":"YBI, W. of Midchannel","lat":37.81,"lon":-122.3831,"dirFlood":143,"dirEbb":331},{"id":"SFB1210","name":"Treasure Island, 0.78 NM NW of","lat":37.8373,"lon":-122.3872,"dirFlood":126,"dirEbb":302}],"derivedZones":[{"name":"bonita_offshore","lon":-122.55,"lat":37.805,"base":"SFB1201","ampFlood":0.75,"dirFlood":80,"ampEbb":0.85,"dirEbb":258,"lagMin":-5},{"name":"bonita_cove","lon":-122.525,"lat":37.821,"base":"SFB1201","ampFlood":0.55,"dirFlood":55,"ampEbb":0.6,"dirEbb":235,"lagMin":0},{"name":"mile_rocks","lon":-122.51,"lat":37.792,"base":"SFB1201","ampFlood":0.85,"dirFlood":55,"ampEbb":0.9,"dirEbb":240,"lagMin":0},{"name":"pt_diablo","lon":-122.501,"lat":37.826,"base":"SFB1201","ampFlood":0.9,"dirFlood":80,"ampEbb":1.0,"dirEbb":250,"lagMin":2},{"name":"gate_north","lon":-122.479,"lat":37.829,"base":"SFB1203","ampFlood":1.0,"dirFlood":85,"ampEbb":1.05,"dirEbb":265,"lagMin":0},{"name":"gate_south","lon":-122.477,"lat":37.811,"base":"SFB1203","ampFlood":1.0,"dirFlood":75,"ampEbb":1.1,"dirEbb":262,"lagMin":0},{"name":"yellow_bluff","lon":-122.477,"lat":37.8375,"base":"SFB1203","ampFlood":0.7,"dirFlood":60,"ampEbb":0.4,"dirEbb":90,"lagMin":8},{"name":"sausalito","lon":-122.479,"lat":37.848,"base":"SFB1203","ampFlood":0.5,"dirFlood":40,"ampEbb":0.3,"dirEbb":110,"lagMin":12},{"name":"crissy","lon":-122.465,"lat":37.8045,"base":"SFB1203","ampFlood":0.4,"dirFlood":250,"ampEbb":0.8,"dirEbb":265,"lagMin":5},{"name":"fort_mason","lon":-122.431,"lat":37.8062,"base":"SFB1204","ampFlood":0.4,"dirFlood":245,"ampEbb":0.85,"dirEbb":270,"lagMin":6},{"name":"harding_rock","lon":-122.445,"lat":37.825,"base":"SFB1203","ampFlood":0.85,"dirFlood":80,"ampEbb":0.95,"dirEbb":265,"lagMin":4},{"name":"alcatraz_n","lon":-122.423,"lat":37.833,"base":"SFB1204","ampFlood":0.9,"dirFlood":75,"ampEbb":0.9,"dirEbb":265,"lagMin":2},{"name":"raccoon","lon":-122.44,"lat":37.862,"base":"SFB1204","ampFlood":0.85,"dirFlood":90,"ampEbb":0.9,"dirEbb":270,"lagMin":10},{"name":"pt_blunt","lon":-122.418,"lat":37.85,"base":"SFB1204","ampFlood":0.75,"dirFlood":60,"ampEbb":0.8,"dirEbb":250,"lagMin":8},{"name":"angel_ne","lon":-122.42,"lat":37.872,"base":"SFB1210","ampFlood":0.6,"dirFlood":40,"ampEbb":0.65,"dirEbb":225,"lagMin":5},{"name":"southampton","lon":-122.41,"lat":37.88,"base":"SFB1210","ampFlood":0.7,"dirFlood":40,"ampEbb":0.75,"dirEbb":220,"lagMin":10},{"name":"berkeley_circle","lon":-122.372,"lat":37.86,"base":"SFB1210","ampFlood":0.6,"dirFlood":60,"ampEbb":0.65,"dirEbb":240,"lagMin":15},{"name":"berkeley_flats","lon":-122.335,"lat":37.865,"base":"SFB1210","ampFlood":0.35,"dirFlood":70,"ampEbb":0.4,"dirEbb":250,"lagMin":25},{"name":"richmond_s","lon":-122.39,"lat":37.895,"base":"SFB1210","ampFlood":0.55,"dirFlood":30,"ampEbb":0.6,"dirEbb":210,"lagMin":15}],"metStations":[{"id":"9414290","name":"San Francisco (Fort Point)","lat":37.8063,"lon":-122.4659},{"id":"9414863","name":"Richmond","lat":37.9283,"lon":-122.4},{"id":"9414750","name":"Alameda","lat":37.772,"lon":-122.3003}],"currentParams":{"idwD0":350.0,"idwPower":2.0,"shoreReliefL":220.0,"shoreReliefFloor":0.55},"windPoints":[{"name":"ocean_west","lon":-122.565,"lat":37.8,"mult":1.0,"dir":282},{"name":"bonita","lon":-122.535,"lat":37.815,"mult":1.02,"dir":278},{"name":"headland_lee","lon":-122.498,"lat":37.8265,"mult":0.72,"dir":252},{"name":"gate_throat","lon":-122.4783,"lat":37.8199,"mult":1.3,"dir":270},{"name":"gate_south","lon":-122.477,"lat":37.8105,"mult":1.26,"dir":268},{"name":"gate_north","lon":-122.479,"lat":37.8285,"mult":1.18,"dir":272},{"name":"crissy","lon":-122.465,"lat":37.805,"mult":1.18,"dir":272},{"name":"fort_mason","lon":-122.431,"lat":37.8065,"mult":0.92,"dir":256},{"name":"aquatic_park","lon":-122.4225,"lat":37.8062,"mult":0.74,"dir":250},{"name":"harding_rock","lon":-122.445,"lat":37.825,"mult":1.2,"dir":265},{"name":"alcatraz_w","lon":-122.429,"lat":37.8265,"mult":1.14,"dir":262},{"name":"yellow_bluff","lon":-122.477,"lat":37.838,"mult":0.88,"dir":258},{"name":"sausalito","lon":-122.479,"lat":37.849,"mult":0.58,"dir":240},{"name":"raccoon","lon":-122.44,"lat":37.862,"mult":0.7,"dir":250},{"name":"angel_south","lon":-122.429,"lat":37.848,"mult":0.96,"dir":258},{"name":"pt_blunt","lon":-122.418,"lat":37.85,"mult":1.06,"dir":255},{"name":"southampton","lon":-122.41,"lat":37.88,"mult":1.0,"dir":246},{"name":"berkeley_circle","lon":-122.372,"lat":37.86,"mult":1.08,"dir":250},{"name":"berkeley_inshore","lon":-122.335,"lat":37.865,"mult":0.82,"dir":246},{"name":"richmond_s","lon":-122.39,"lat":37.895,"mult":0.9,"dir":242},{"name":"treasure_e","lon":-122.356,"lat":37.822,"mult":0.74,"dir":254},{"name":"south_central","lon":-122.38,"lat":37.795,"mult":0.98,"dir":254}],"windParams":{"idwD0":900.0,"idwPower":2.0,"leePerHeight":14.0,"leeMax":4000.0,"leeDeficit":0.55,"leeHRef":150.0,"leeExp":0.6},"polar":{"tws":[0.0,4.0,6.0,8.0,10.0,12.0,14.0,16.0,18.0,20.0,22.0,25.0,30.0],"twa":[0.0,30.0,40.0,45.0,52.0,60.0,70.0,80.0,90.0,100.0,110.0,120.0,130.0,140.0,150.0,160.0,170.0,180.0],"speed":[[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0],[0.0,0.0,2.4,2.7,3.0,3.3,3.5,3.6,3.7,3.7,3.6,3.4,3.2,3.0,2.7,2.4,2.1,1.9],[0.0,3.1,4.0,4.3,4.5,4.7,5.0,5.1,5.2,5.2,5.1,4.9,4.6,4.3,3.9,3.5,3.1,2.9],[0.0,3.7,4.7,4.9,5.1,5.5,5.8,6.0,6.1,6.1,6.0,5.8,5.6,5.3,4.9,4.4,4.0,3.7],[0.0,4.1,5.2,5.4,5.6,6.0,6.4,6.7,6.9,7.0,7.0,6.9,6.7,6.4,5.9,5.3,4.8,4.5],[0.0,4.3,5.5,5.7,5.9,6.3,6.8,7.2,7.4,7.5,7.4,7.0,6.9,6.7,6.4,5.9,5.4,5.0],[0.0,4.4,5.6,5.7,6.0,6.5,7.0,7.4,7.7,7.9,8.0,8.0,7.9,7.6,7.2,6.6,6.0,5.6],[0.0,4.5,5.7,5.8,6.1,6.7,7.3,7.8,8.2,8.5,8.7,8.8,8.7,8.4,8.0,7.4,6.7,6.2],[0.0,4.5,5.8,5.9,6.2,6.9,7.5,8.1,8.6,9.1,9.6,10.0,10.0,9.8,9.4,8.8,8.1,7.4],[0.0,4.5,5.8,5.9,6.2,7.0,7.6,8.3,8.9,9.5,10.2,10.7,10.8,10.6,10.2,9.6,8.9,8.2],[0.0,4.4,5.7,5.9,6.2,7.0,7.7,8.4,9.1,9.8,10.6,11.2,11.3,11.1,10.7,10.1,9.4,8.7],[0.0,4.3,5.6,5.8,6.1,7.0,7.7,8.5,9.3,10.1,11.0,11.7,11.9,11.7,11.3,10.7,10.0,9.2],[0.0,4.1,5.4,5.6,5.9,6.8,7.6,8.4,9.2,10.0,10.9,11.6,11.8,11.6,11.2,10.6,9.9,9.1]],"name":"Olson 25 (constructed)"},"chopK":0.035,"fallbackSeries":{"SFB1201":{"t":[0.0,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0,13.0,14.0,15.0,16.0,17.0,18.0,19.0,20.0,21.0,22.0,23.0],"v":[2.63,1.5,-0.06,-1.76,-3.08,-3.63,-3.42,-2.52,-1.15,0.41,1.98,3.05,2.99,1.91,0.36,-1.34,-2.82,-3.65,-3.73,-3.18,-2.13,-0.8,0.72,2.16],"dirFlood":61,"dirEbb":239},"SFB1202":{"t":[0.0,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0,13.0,14.0,15.0,16.0,17.0,18.0,19.0,20.0,21.0,22.0,23.0],"v":[3.08,1.95,0.48,-0.79,-1.56,-1.9,-1.82,-1.31,-0.46,0.81,2.43,3.6,3.55,2.38,0.69,-0.89,-1.91,-2.38,-2.43,-2.07,-1.41,-0.43,1.03,2.58],"dirFlood":52,"dirEbb":238},"SFB1203":{"t":[0.0,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0,13.0,14.0,15.0,16.0,17.0,18.0,19.0,20.0,21.0,22.0,23.0],"v":[2.49,1.53,0.12,-1.17,-1.93,-2.12,-1.81,-1.18,-0.24,1.08,2.41,3.11,2.97,2.05,0.55,-0.99,-2.02,-2.42,-2.28,-1.77,-1.04,0.0,1.29,2.3],"dirFlood":69,"dirEbb":257},"SFB1204":{"t":[0.0,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0,13.0,14.0,15.0,16.0,17.0,18.0,19.0,20.0,21.0,22.0,23.0],"v":[1.29,0.44,-0.63,-1.55,-2.04,-2.0,-1.57,-0.84,0.17,1.19,1.8,1.9,1.55,0.73,-0.41,-1.48,-2.13,-2.24,-1.92,-1.33,-0.49,0.5,1.29,1.63],"dirFlood":86,"dirEbb":271},"SFB1205":{"t":[0.0,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0,13.0,14.0,15.0,16.0,17.0,18.0,19.0,20.0,21.0,22.0,23.0],"v":[1.85,0.53,-0.98,-2.11,-2.65,-2.65,-2.11,-1.1,0.32,1.85,2.84,2.93,2.26,0.96,-0.7,-2.09,-2.84,-2.97,-2.56,-1.72,-0.53,0.9,2.13,2.64],"dirFlood":106,"dirEbb":300},"SFB1206":{"t":[0.0,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0,13.0,14.0,15.0,16.0,17.0,18.0,19.0,20.0,21.0,22.0,23.0],"v":[0.6,-0.35,-1.3,-1.99,-2.24,-2.1,-1.64,-0.75,0.46,1.36,1.48,0.98,0.28,-0.47,-1.25,-1.94,-2.33,-2.36,-2.09,-1.37,-0.14,1.17,1.86,1.74],"dirFlood":143,"dirEbb":323},"SFB1209":{"t":[0.0,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0,13.0,14.0,15.0,16.0,17.0,18.0,19.0,20.0,21.0,22.0,23.0],"v":[0.63,-0.12,-0.99,-1.65,-1.87,-1.62,-1.11,-0.42,0.52,1.45,1.91,1.8,1.31,0.51,-0.46,-1.35,-1.91,-2.02,-1.8,-1.4,-0.72,0.21,0.97,1.24],"dirFlood":143,"dirEbb":331},"SFB1210":{"t":[0.0,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0,9.0,10.0,11.0,12.0,13.0,14.0,15.0,16.0,17.0,18.0,19.0,20.0,21.0,22.0,23.0],"v":[0.87,0.16,-0.52,-0.93,-1.03,-0.9,-0.53,-0.06,0.48,1.13,1.55,1.45,1.03,0.47,-0.19,-0.74,-1.06,-1.17,-0.99,-0.55,0.03,0.79,1.49,1.69],"dirFlood":126,"dirEbb":302}},"fallbackNote":"NOAA harmonic predictions for the race date, lst_ldt, + = flood. Used when the live fetch fails."};
+</script>
+<script>
+"use strict";
+(function(){
+const M = window.BonitaModel;
+const DATA = window.BONITA_DATA;
+const $ = id => document.getElementById(id);
+const D2R = Math.PI/180, R2D = 180/Math.PI;
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const seaBreezeOf = M.seaBreeze;
+const hhmm = M.hhmm;
+
+/* ------------------------------------------------------------------ state */
+const S = {
+  res: 250, grid:null, cf:null, wf:null, polar:null, router:null,
+  series:{}, obs:[], forecast:null, profile:null,
+  windSrc:'auto', manualTws:19, manualTwd:255,
+  curScale:1, polScale:1,
+  clockMode:'live', manualTime:10.25,
+  leg:'out', startT:(DATA.race && DATA.race.startH) || 11.0833, course:'1',
+  pos:null, cog:null, sog:null, posTime:null,
+  sim:false, simIdx:0, simPath:null,
+  route:null, routeBack:null, plan:null, solving:false, lastSolve:0,
+  trail:[], layer:'current', follow:true, view:null,
+  cal:null, dataStatus:'', liveOk:false, canFetch:true, lanes:null,
+};
+
+/* Whether outbound fetch is even possible here.  A page served from
+   claude.ai runs under a CSP that blocks it; the same file on your own https
+   host does not.  Detect rather than assume. */
+S.canFetch = !/(^|\.)claude\.(ai|com)$/.test(location.hostname) &&
+             location.protocol !== 'null:' && location.protocol !== 'data:';
+
+function nowHours(){
+  if (S.clockMode === 'manual') return S.manualTime;
+  const d = new Date();
+  return d.getHours() + d.getMinutes()/60 + d.getSeconds()/3600;
+}
+
+/* --------------------------------------------------------------- build it */
+function buildFields(){
+  S.grid = new M.Grid(DATA, S.res);
+  S.series = {};
+  for (const [id, s] of Object.entries(DATA.fallbackSeries || {}))
+    S.series[id] = new M.RefSeries(s.t, s.v);
+  for (const [id, s] of Object.entries(S.liveSeries || {}))
+    S.series[id] = new M.RefSeries(s.t, s.v);
+  S.cf = new M.CurrentField(S.grid, DATA, S.series, {strength: S.curScale});
+  S.wf = new M.WindField(S.grid, DATA, {});
+  applyWindSource();
+  S.polar = new M.Polar(DATA, S.polScale);
+  S.router = new M.Router(S.grid, S.wf, S.cf, S.polar, {currentScale: 1});
+  $('ftStations').textContent = S.cf.nZonesMeasured();
+}
+
+function applyWindSource(){
+  if (!S.wf) return;
+  if (S.windSrc === 'manual'){
+    /*
+      Your observed wind, turned into a domain mean by dividing out the
+      field's structural multiplier where you saw it -- then used to SCALE the
+      diurnal curve, not to replace it.  Freezing the whole day at the 8 kt you
+      see at the start planned the 14:30 run in 8 kt and put two hours on the
+      predicted finish.
+
+      The reference point is frozen when you switch to manual, so sailing from
+      the Berkeley Circle into the Gate does not silently change what your
+      typed number means.
+    */
+    if (!S.manualRef) S.manualRef = (S.pos || DATA.marks.start).slice();
+    const st = S.wf.structAt(S.manualRef[0], S.manualRef[1]) || 1;
+    const tRef = nowHours();
+    const curve = (t) => seaBreezeOf(S.wf.breeze, t);
+    const k = (S.manualTws / st) / Math.max(curve(tRef), 0.5);
+    S.wf.profile = { mean: (t) => curve(t) * k };
+    S.wf.dirOffset = (S.manualTwd - S.wf.dirAt(S.manualRef[0], S.manualRef[1]) * R2D) * D2R;
+    S.profile = {source:'manual', anchored:true, nObs:1, anchor:k, tObs:tRef};
+  } else {
+    S.manualRef = null;
+    S.profile = M.Live.buildProfile(S.wf, {
+      forecast: S.forecast, obs: S.obs, tNow: nowHours(), relaxHours: 3,
+      domain: DATA.domain });
+    S.wf.profile = S.profile;
+    S.wf.dirOffset = (S.profile.dirErr != null) ? S.profile.dirErr * D2R : 0;
+  }
+  if (S.router) S.router.fieldCache.clear(), S.router.edgeCache.clear();
+}
+
+/* ------------------------------------------------------------- live data */
+async function loadLive(force){
+  const date = DATA.meta.date;
+  setDot('dData','warn'); $('tData').textContent = 'FETCHING';
+  if (!S.canFetch){
+    S.dataStatus = 'This copy is served from claude.ai, whose sandbox blocks outbound requests, '
+      + 'so it runs on the NOAA harmonic predictions baked in at build time (' + date + '). '
+      + 'The copy on your own https host fetches live.';
+    setDot('dData','warn'); $('tData').textContent = 'BAKED';
+    S.liveOk = false; renderData(); return;
+  }
+  const ids = DATA.stations.map(s=>s.id);
+  let msg = [];
+  try{
+    const cur = await M.Live.fetchCurrents(date, ids, {force:!!force});
+    S.liveSeries = {};
+    for (const [id,v] of Object.entries(cur.series)) S.liveSeries[id] = v;
+    msg.push(`currents: ${Object.keys(cur.series).length}/${ids.length} stations`
+      + (cur.cachedOnly ? ' (from cache)' : ' live'));
+    S.liveOk = !cur.cachedOnly;
+  }catch(e){ msg.push('currents: failed, using baked predictions'); }
+
+  try{
+    const w = await M.Live.fetchWindObs(DATA.metStations);
+    S.obs = w.obs || [];
+    msg.push(`wind obs: ${S.obs.length} anemometer${S.obs.length===1?'':'s'}`
+      + (w.stale?' (cached)':''));
+  }catch(e){ msg.push('wind obs: unavailable'); }
+
+  try{
+    const pts = [[-122.53,37.815],[-122.478,37.820],[-122.44,37.83],
+                 [-122.40,37.855],[-122.35,37.866],[-122.47,37.855]];
+    const f = await M.Live.fetchWindForecast(date, pts);
+    S.forecast = f.fc;
+    msg.push('forecast: ' + (f.fc ? (f.stale?'cached':'live') : 'unavailable'));
+  }catch(e){ msg.push('forecast: unavailable'); }
+
+  S.dataStatus = msg.join(' · ');
+  setDot('dData', S.liveOk ? 'ok' : 'warn');
+  $('tData').textContent = S.liveOk ? 'LIVE' : 'CACHED';
+  buildFields();
+  renderData();
+  solve(true);
+}
+
+function setDot(id, cls){ const e=$(id); e.className='dot'+(cls?' '+cls:''); }
+
+/* ----------------------------------------------------------------- solver */
+function courseMark(){ return DATA.marks[DATA.courses[S.course].mark]; }
+function courseMarkName(){ return S.course==='2' ? 'EASOM' : 'Bonita'; }
+function activeTarget(){
+  if (S.leg === 'back') return DATA.marks.finish;
+  return courseMark();
+}
+function originNow(){
+  if (S.leg === 'pre' || !S.pos) return DATA.marks.start;
+  return S.pos;
+}
+
+function solve(force){
+  if (S.solving) return;
+  const t = nowHours();
+  if (!force && Date.now() - S.lastSolve < 4000) return;
+  S.solving = true; S.lastSolve = Date.now();
+  setDot('dSolve','warn'); $('tSolve').textContent='SOLVING';
+  /* let the browser paint the SOLVING state before we block on Dijkstra */
+  setTimeout(()=>{
+    const t0 = performance.now();
+    try{
+      const from = originNow();
+      const startT = (S.leg==='pre') ? S.startT : t;
+      let a = S.router.route(from, activeTarget(), startT);
+      S.holdMin = 0;
+      /*
+        The router prices each edge with the field frozen at its departure bin
+        and refuses edges longer than a few bins, so against a peak flood it
+        can honestly report that there is no way through from here right now.
+        That is real information, not a failure -- the answer is to wait.  Find
+        the earliest departure that does get through, and also check whether a
+        later start simply arrives sooner, which against a turning tide it can.
+      */
+      /* the sweep costs four extra solves, so run it when the primary route
+         fails (we need an answer) or on an explicit re-route, never on the
+         20-second background tick */
+      const alt = [];
+      if (!a.ok || force) {
+        for (const dh of [0.25, 0.5, 0.75, 1.0]) {
+          const r = S.router.route(from, activeTarget(), startT + dh);
+          if (r.ok) alt.push({ dh, r });
+          if (!a.ok && r.ok) break;
+        }
+      }
+      if (!a.ok && alt.length) { a = alt[0].r; S.holdMin = Math.round(alt[0].dh*60); }
+      else if (a.ok) {
+        const better = alt.filter(x => x.r.tEnd < a.tEnd - 1/60)
+                          .sort((x,y) => x.r.tEnd - y.r.tEnd)[0];
+        if (better) S.holdMin = Math.round(better.dh*60);
+      }
+      S.route = a;
+      if (a.ok && S.leg !== 'back'){
+        S.routeBack = S.router.route(courseMark(), DATA.marks.finish, a.tEnd);
+      } else if (S.leg === 'back'){ S.routeBack = a; S.route = a; }
+      else S.routeBack = null;
+      S.plan = buildPlan(a, t);
+      S.solveMs = Math.round(performance.now()-t0);
+      setDot('dSolve', a.ok?'ok':'bad');
+      $('tSolve').textContent = a.ok ? (S.solveMs+' MS') : 'NO ROUTE';
+    }catch(e){
+      setDot('dSolve','bad'); $('tSolve').textContent='ERROR';
+      console.error(e);
+    }
+    S.solving = false;
+    renderCall(); renderTiles(); draw();
+  }, 16);
+}
+
+/*
+  Turn the routed path into the two things you actually need at the wheel:
+  the course to steer right now, and where the next manoeuvre is.
+*/
+function buildPlan(route, tNow){
+  if (!route || !route.ok || route.path.length < 2) return null;
+  const g = S.grid, P = route.path;
+  /* recommended COG: average the first ~400 m of the plan so a single grid
+     step's quantisation does not swing the call */
+  /* average only up to the first manoeuvre: averaging across a tack returns a
+     course inside the no-go zone and tells the helm to steer into irons */
+  let stopAt = P.length;
+  {
+    let prevD = P.length>1 ? P[1].dir : -1;
+    const F0 = S.router.fields(route.tStart);
+    const wd0 = F0.twd[g.idx(P[0].lon,P[0].lat)]*R2D;
+    for (let k=2;k<P.length;k++){
+      if (P[k].dir !== prevD){
+        const a1=((S.router.cog[prevD]-wd0+540)%360)-180;
+        const a2=((S.router.cog[P[k].dir]-wd0+540)%360)-180;
+        if (a1*a2 < 0){ stopAt = k; break; }
+      }
+      prevD = P[k].dir;
+    }
+  }
+  let acc = 400, sx=0, sy=0;
+  for (let k=1;k<stopAt && acc>0;k++){
+    const dx=(P[k].lon-P[k-1].lon)*g.mLon, dy=(P[k].lat-P[k-1].lat)*g.mLat;
+    const L=Math.hypot(dx,dy); if(L<1e-6) continue;
+    const w=Math.min(L,acc); sx+=dx/L*w; sy+=dy/L*w; acc-=w;
+  }
+  const steer = ((Math.atan2(sx,sy)*R2D)%360+360)%360;
+
+  const F = S.router.fields(route.tStart);
+  const i0 = g.idx(P[0].lon, P[0].lat);
+  const twd = ((F.twd[i0]*R2D)%360+360)%360, tws = F.tws[i0];
+  const twaSteer = ((steer - twd + 540)%360)-180;
+  const tack = twaSteer < 0 ? 'starboard' : 'port';   /* wind over that side */
+
+  /* first genuine manoeuvre along the plan: a direction change that crosses
+     the wind axis */
+  let man=null;
+  let prevDir = P[1].dir, dist=0;
+  for (let k=1;k<P.length;k++){
+    const dx=(P[k].lon-P[k-1].lon)*g.mLon, dy=(P[k].lat-P[k-1].lat)*g.mLat;
+    dist += Math.hypot(dx,dy);
+    if (k>1 && P[k].dir !== prevDir){
+      const a1 = ((S.router.cog[prevDir]-twd+540)%360)-180;
+      const a2 = ((S.router.cog[P[k].dir]-twd+540)%360)-180;
+      if (a1*a2 < 0){
+        man = { kind: (Math.abs(a1)<90 && Math.abs(a2)<90) ? 'tack' : 'gybe',
+                nm: dist/1852, t: P[k].t,
+                newCog: S.router.cog[P[k].dir] };
+        break;
+      }
+    }
+    prevDir = P[k].dir;
+  }
+
+  /* layline to the mark on the current tack */
+  const target = activeTarget();
+  const brg = M.bearing([P[0].lon,P[0].lat], target, g);
+  const dNm = M.distNm([P[0].lon,P[0].lat], target, g);
+  /*
+    Layline, corrected for current and for which tack you are on.  The
+    uncorrected version was wrong by 15-25 deg at Bonita in 3 kt of set, said
+    "on the layline" while you sailed away on the other tack, and stayed true
+    after you had overstood.
+  */
+  const beat = S.polar.bestVMG(tws, true);
+  const F2 = S.router.fields(route.tStart);
+  const i2 = g.idx(P[0].lon, P[0].lat);
+  const cuk = F2.cu[i2], cvk = F2.cv[i2];
+  const layTwa = twaSteer < 0 ? -beat.twa : beat.twa;      // this tack
+  const hdg = (twd + layTwa) * D2R;
+  const gx = beat.bs*Math.sin(hdg) + cuk, gy = beat.bs*Math.cos(hdg) + cvk;
+  const layCog = ((Math.atan2(gx,gy)*R2D)%360+360)%360;    // ground track on this tack
+  const offLay = ((brg - layCog + 540)%360)-180;
+  const onLayline = Math.abs(offLay) < 6 &&
+                    Math.abs((((brg - twd + 540)%360)-180)) < 90;
+  const overstood = (twaSteer < 0 ? offLay > 6 : offLay < -6) &&
+                    Math.abs((((brg - twd + 540)%360)-180)) < 90;
+
+  return { steer, tack, twd, tws, man, brg, dNm, twaSteer, onLayline,
+           overstood, layCog, beatTwa: beat.twa, tEnd: route.tEnd };
+}
+
+/* ------------------------------------------------------------------ views */
+function renderCall(){
+  const w = $('callWord'), sub = $('callSub'), sv = $('steerVal');
+  const p = S.plan;
+  if (!p){ w.className='wait'; w.textContent='STANDBY';
+    sub.textContent = S.route && !S.route.ok
+      ? 'No route from here — you may be outside the model grid.'
+      : 'Waiting for a position fix. Open Position & calibration to simulate instead.';
+    sv.textContent='---'; return; }
+  sv.textContent = Math.round(p.steer).toString().padStart(3,'0');
+
+  const haveCog = S.cog != null && S.sog != null && S.sog > 0.6;
+  const myTwa = haveCog ? ((S.cog - p.twd + 540)%360)-180 : null;
+  const crossing = haveCog && (myTwa * p.twaSteer < 0);
+  const off = haveCog ? Math.abs(((S.cog - p.steer + 540)%360)-180) : 0;
+
+  if (crossing && Math.abs(myTwa) < 90){
+    w.className = p.tack==='port' ? 'port' : 'stbd';
+    w.textContent = 'TACK';
+    sub.textContent = `Onto ${p.tack}. You are ${Math.round(off)}° off the plan.`;
+  } else if (crossing){
+    w.className = p.tack==='port' ? 'port' : 'stbd';
+    w.textContent = 'GYBE';
+    sub.textContent = `Onto ${p.tack}. You are ${Math.round(off)}° off the plan.`;
+  } else if (haveCog && off > 12){
+    w.className='hold'; w.textContent = off>0 ? 'ADJUST' : 'HOLD';
+    sub.textContent = `${Math.round(off)}° ${(((S.cog-p.steer+540)%360)-180)>0?'high':'low'} of the plan — come `
+      + `${(((S.cog-p.steer+540)%360)-180)>0?'down':'up'} to ${Math.round(p.steer)}°.`;
+  } else {
+    w.className = p.tack==='port' ? 'port' : 'stbd';
+    w.textContent = p.tack==='port' ? 'PORT' : 'STARBOARD';
+    let s = `TWA ${Math.round(Math.abs(p.twaSteer))}° in ${p.tws.toFixed(0)} kt from ${Math.round(p.twd)}°.`;
+    if (p.onLayline) s += ' On the layline (current-corrected).';
+    else if (p.overstood) s += ' You have overstood.';
+    if (S.holdMin) s += ` Leaving ${S.holdMin} min later gets there sooner.`;
+    sub.textContent = s;
+  }
+}
+
+function renderTiles(){
+  const p = S.plan;
+  $('tCog').textContent = S.cog!=null ? Math.round(S.cog).toString().padStart(3,'0') : '---';
+  $('tSog').textContent = S.sog!=null ? S.sog.toFixed(1) : '--';
+  const tn = $('tNext'), tu = $('tNextU'), tile = $('tileNext');
+  const td = $('tNextD');
+  if (p && p.man){
+    const mins = (p.man.t - nowHours())*60;
+    tn.textContent = mins < 1 ? 'NOW' : Math.round(mins);
+    tu.textContent = mins < 1 ? '' : ' min';
+    td.textContent = `${p.man.nm.toFixed(1)} nm · ${p.man.kind}`;
+    tile.classList.toggle('alarm', mins < 2);
+  } else { tn.textContent='--'; tu.textContent=''; td.textContent='none in plan';
+    tile.classList.remove('alarm'); }
+  $('lblMark').textContent = S.leg==='back' ? 'To finish' : 'To '+courseMarkName();
+  $('lblRound').textContent = 'Round '+courseMarkName();
+  $('btnLegOut').textContent = 'To '+courseMarkName();
+  $('tToMark').textContent = p ? p.dNm.toFixed(1) : '--';
+  const fin = (S.leg==='back') ? (S.route&&S.route.ok?S.route.tEnd:null)
+                               : (S.routeBack&&S.routeBack.ok?S.routeBack.tEnd:null);
+  $('tEta').textContent = fin!=null ? hhmm(fin) : '--:--';
+  $('lblEta').textContent = 'Finish ETA';
+
+  $('vRound').textContent = (S.leg!=='back' && S.route&&S.route.ok) ? hhmm(S.route.tEnd) : '--:--';
+  $('vFinish').textContent = fin!=null ? hhmm(fin) : '--:--';
+  const el = nowHours() - S.startT;
+  $('vElapsed').textContent = (S.leg!=='pre' && el>0) ? el.toFixed(2)+' h' : '--';
+  $('vRemain').textContent = fin!=null ? (fin-nowHours()).toFixed(2)+' h' : '--';
+  const lim = (DATA.race && DATA.race.timeLimitH) || 19;
+  $('vLimit').textContent = hhmm(lim);
+  const ih = $('vInHand');
+  if (fin!=null){ const m=(lim-fin)*60; ih.textContent=(m>=0?'+':'')+Math.round(m)+' min';
+    ih.style.color = m<0 ? 'var(--bad)' : m<30 ? 'var(--warn)' : ''; }
+  else { ih.textContent='--'; ih.style.color=''; }
+  renderZones();
+
+  if (S.pos){
+    const c = S.cf.sample(nowHours(), S.pos[0], S.pos[1]);
+    const w = S.wf.sample(nowHours(), S.pos[0], S.pos[1]);
+    $('cHere').textContent = c.kt.toFixed(2); $('cDir').textContent = Math.round(c.set);
+    $('wHere').textContent = w.kt.toFixed(1); $('wDir').textContent = Math.round(w.from);
+    $('pLat').textContent = S.pos[1].toFixed(4); $('pLon').textContent = S.pos[0].toFixed(4);
+  }
+}
+
+function renderData(){
+  $('dataNote').textContent = S.dataStatus || '';
+  const wn = $('windNote');
+  if (S.windSrc==='manual'){
+    wn.textContent = 'Manual: your observed wind is divided by the field’s structural '
+      + 'multiplier where you are, to set the domain mean. The Gate acceleration and the '
+      + 'island lees still apply on top.';
+  } else if (S.profile){
+    wn.textContent = `Profile from ${S.profile.source}. `
+      + (S.profile.nDropped ? `${S.profile.nDropped} station${S.profile.nDropped===1?'':'s'} outside the model domain ignored. ` : '')
+      + (S.profile.anchored
+         ? `Anchored to ${S.profile.nObs} live anemometer${S.profile.nObs===1?'':'s'}`
+           + (S.profile.tObs!=null?` at ${hhmm(S.profile.tObs)}`:'')
+           + `: implied domain mean `
+           + `${S.profile.impliedNow.toFixed(1)} kt now`
+           + (S.profile.dirErr!=null ? `, direction ${S.profile.dirErr>0?'+':''}${S.profile.dirErr.toFixed(0)}° vs model.` : '.')
+           + ' The correction relaxes back to the forecast over about 3 hours.'
+         : 'No live observations, so the forecast (or the parameterised sea breeze) runs unanchored.');
+  }
+  const ot = $('obsTable');
+  if (S.obs.length){
+    ot.innerHTML = '<tr><th>Anemometer</th><th>kt</th><th>gust</th><th>from</th><th>at</th></tr>'
+      + S.obs.map(o=>`<tr><td>${o.name.replace(/ \(.*\)/,'')}</td><td>${o.kt.toFixed(1)}</td>`
+        + `<td>${isFinite(o.gustKt)?o.gustKt.toFixed(1):'–'}</td><td>${Math.round(o.from)}°</td>`
+        + `<td>${o.time?o.time.slice(11):'–'}</td></tr>`).join('');
+  } else ot.innerHTML = '';
+
+  const t = nowHours();
+  const st = $('stnTable');
+  st.innerHTML = '<tr><th>NOAA station</th><th>kt</th><th>set</th></tr>'
+    + S.cf.zones.filter(z=>z.kind==='measured').map(z=>{
+        const s = S.series[z.base].at(t);
+        const flood = s>=0;
+        return `<tr><td>${z.name.replace(/,.*/,'')}</td>`
+          + `<td class="${flood?'':''}" style="color:${flood?'var(--flood)':'var(--ebb)'}">`
+          + `${Math.abs(s).toFixed(2)}</td>`
+          + `<td>${flood?z.dirFlood:z.dirEbb}°</td></tr>`;
+      }).join('');
+  $('curNote').innerHTML = 'Warm = flood, cool = ebb. The two zones that decide this race have no '
+    + 'NOAA station and are hand-modelled: the <b>Cityfront flood back-eddy</b> (sets west while '
+    + 'the Gate floods east) and the <b>Yellow Bluff ebb back-eddy</b> (sets east while the Gate '
+    + 'ebbs west). They are the model’s biggest editorial choice.';
+  $('mPhrf').textContent = Math.round(impliedPhrf(S.polar));
+}
+
+function impliedPhrf(p){
+  const up = p.bestVMG(12,true), dn = p.bestVMG(12,false);
+  const hours = 1/up.vmg + 1/p.at(90,12) + 1/dn.vmg;
+  return hours*3600/3 - 520;
+}
+
+function renderLanes(){
+  if (!S.lanes){ $('lanes').textContent =
+    'Tap Re-route to compare committing to one side (each corridor sailed optimally, obstructions applied).'; return; }
+  $('lanes').innerHTML = S.lanes.map(l =>
+    `<div class="rowval"><span>${l.name}</span><span style="font-family:var(--f-mono)">`
+    + (isFinite(l.h) ? `${l.h.toFixed(2)} h <span style="color:${l.d<=0.1?'var(--ok)':'var(--ink-faint)'}">`
+        + `${l.d>=0?'+':''}${(l.d*60).toFixed(0)} min</span>` : 'blocked') + '</span></div>').join('');
+}
+
+function renderZones(){
+  const el = $('zones');
+  const legs = [];
+  if (S.route && S.route.ok) legs.push([S.leg==='back'?'to finish':'to '+courseMarkName(), S.route]);
+  if (S.routeBack && S.routeBack.ok && S.leg!=='back') legs.push(['to finish', S.routeBack]);
+  if (!legs.length){ el.textContent='Shipping-lane crossings appear once a route is solved.'; return; }
+  const zones = DATA.shippingZones || [];
+  const rows = [];
+  for (const [tag, r] of legs){
+    for (const z of (r.zoneCrossings||[])){
+      if (z.kind==='precautionary' && zones[z.k] && zones[z.k].weight<=1) continue;  /* flag-only zone */
+      rows.push(`<div class="rowval"><span>${tag}: ${z.zone.replace(/ \(.*\)/,'')}</span>`
+        + `<span style="font-family:var(--f-mono)">${hhmm(z.tIn)}–${hhmm(z.tOut)}</span></div>`);
+    }
+  }
+  el.innerHTML = '<b>Rule 9 / SI 9.1 — plan crosses a ship lane:</b> '
+    + (rows.length ? rows.join('') : 'no lane on the plan.')
+    + ' <span style="color:var(--ink-faint)">Lanes are a soft cost (+10%); a ship in the lane has right of way and can push you off the plan here.</span>';
+}
+
+/* ------------------------------------------------------------------ chart */
+const cv = $('chart'), ctx = cv.getContext('2d');
+let dpr = 1, cw=0, ch=0;
+function resize(){
+  dpr = Math.min(window.devicePixelRatio||1, 2);
+  const r = cv.parentElement.getBoundingClientRect();
+  cw = r.width; ch = r.height;
+  cv.width = Math.round(cw*dpr); cv.height = Math.round(ch*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  if (!S.view) fitView();
+  draw();
+}
+function fitView(){
+  const pad = 0.006;
+  let lo0=-122.56, lo1=-122.31, la0=37.785, la1=37.90;
+  S.view = {lo0:lo0-pad, lo1:lo1+pad, la0:la0-pad, la1:la1+pad};
+  S.follow = false; $('btnFollow').setAttribute('aria-pressed','false');
+}
+function followView(){
+  if (!S.pos) return;
+  const halfLon = 0.045, halfLat = halfLon*Math.cos(37.85*D2R)*(ch/Math.max(cw,1));
+  S.view = {lo0:S.pos[0]-halfLon, lo1:S.pos[0]+halfLon,
+            la0:S.pos[1]-halfLat, la1:S.pos[1]+halfLat};
+}
+function proj(lon,lat){
+  const v=S.view;
+  return [ (lon-v.lo0)/(v.lo1-v.lo0)*cw, ch - (lat-v.la0)/(v.la1-v.la0)*ch ];
+}
+const _cv={};
+function cssVar(n){
+  if (_cv.k !== document.documentElement.getAttribute('data-theme')){ _cv.k=document.documentElement.getAttribute('data-theme'); _cv.m={}; }
+  if (_cv.m[n]===undefined)
+    _cv.m[n]=getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  return _cv.m[n];
+}
+
+let fieldCanvas=null;
+function draw(){
+  if (!S.grid || !S.view) return;
+  const t = nowHours();
+  ctx.clearRect(0,0,cw,ch);
+  ctx.fillStyle = cssVar('--ground'); ctx.fillRect(0,0,cw,ch);
+
+  /* field raster: one ImageData at grid resolution, scaled up */
+  const g = S.grid;
+  if (!fieldCanvas || fieldCanvas.width!==g.nx || fieldCanvas.height!==g.ny){
+    fieldCanvas = document.createElement('canvas');
+    fieldCanvas.width=g.nx; fieldCanvas.height=g.ny;
+  }
+  const fx = fieldCanvas.getContext('2d');
+  const img = fx.createImageData(g.nx,g.ny);
+  /* resolve theme colours once -- getComputedStyle inside the per-cell loop
+     would cost thousands of style recalcs per frame */
+  const landRGB = hexRGB(cssVar('--land'));
+  const floodRGB = hexRGB(cssVar('--flood')), ebbRGB = hexRGB(cssVar('--ebb'));
+  const seaRGB = document.documentElement.getAttribute('data-theme')==='light'
+    ? [232,238,245] : [13,20,32];
+  const windLo = seaRGB, windHi = [120,200,255];
+  let U=null,V=null,W=null;
+  if (S.layer==='current'){ const c=S.cf.at(t); U=c.u; V=c.v; }
+  else { W = S.wf.at(t).tws; }
+  for (let r=0;r<g.ny;r++) for (let c=0;c<g.nx;c++){
+    const i=r*g.nx+c, o=((g.ny-1-r)*g.nx+c)*4;
+    if (g.land[i]){ img.data[o]=landRGB[0]; img.data[o+1]=landRGB[1]; img.data[o+2]=landRGB[2]; img.data[o+3]=255; continue; }
+    if (!g.water[i]){ img.data[o+3]=0; continue; }
+    let col;
+    if (S.layer==='current'){
+      const sp=Math.hypot(U[i],V[i]);
+      /* east-going = flood-ish, west-going = ebb-ish */
+      const east = U[i] >= 0;
+      const a = Math.min(sp/3.2,1);
+      col = mix(seaRGB, east?floodRGB:ebbRGB, a);
+    } else {
+      col = mix(windLo, windHi, clamp((W[i]-4)/22,0,1));
+    }
+    img.data[o]=col[0]; img.data[o+1]=col[1]; img.data[o+2]=col[2]; img.data[o+3]=235;
+  }
+  fx.putImageData(img,0,0);
+  const p0=proj(g.LON[0], g.LAT[(g.ny-1)*g.nx]);
+  const p1=proj(g.LON[g.nx-1], g.LAT[0]);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(fieldCanvas, p0[0], p0[1], p1[0]-p0[0], p1[1]-p0[1]);
+
+  /* SI 9.1 shipping zones (dashed, soft) */
+  for (const z of (DATA.shippingZones||[])){
+    ctx.strokeStyle = 'rgba(159,180,255,0.55)'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+    ctx.beginPath();
+    z.poly.forEach((p,k)=>{ const q=proj(p[0],p[1]); k?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); });
+    ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+  }
+  /* SI 10 obstruction lines (solid red, hard no-go) */
+  for (const ob of (DATA.obstructions||[])){
+    ctx.strokeStyle = '#ff3b3b'; ctx.lineWidth=2.5; ctx.lineCap='round';
+    ctx.beginPath();
+    ob.line.forEach((p,k)=>{ const q=proj(p[0],p[1]); k?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); });
+    ctx.stroke();
+  }
+
+  /* planned route */
+  if (S.route && S.route.ok) strokePath(S.route.path, cssVar('--accent'), 2.4);
+  if (S.routeBack && S.routeBack.ok && S.leg!=='back')
+    strokePath(S.routeBack.path, cssVar('--accent-dim'), 1.8);
+
+  /* sailed trail */
+  if (S.trail.length>1){
+    ctx.strokeStyle = cssVar('--ink'); ctx.lineWidth=2.6; ctx.lineJoin='round';
+    ctx.beginPath();
+    S.trail.forEach((p,k)=>{ const q=proj(p[0],p[1]); k?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); });
+    ctx.stroke();
+  }
+
+  /* marks */
+  for (const [k,v] of Object.entries(DATA.marks)){
+    if (k==='finish') continue;
+    const q=proj(v[0],v[1]);
+    ctx.fillStyle=cssVar('--accent'); ctx.strokeStyle=cssVar('--ground'); ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(q[0],q[1],5,0,7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle=cssVar('--ink-dim'); ctx.font='600 10px '+cssVar('--f-body');
+    const txt = k==='start' ? 'START/FIN' : k==='easom' ? 'EASOM' : 'BONITA';
+    const w = ctx.measureText(txt).width;
+    const flip = q[0] + 10 + w > cw - 8;
+    ctx.fillText(txt, flip ? q[0]-8-w : q[0]+8, q[1]+3);
+  }
+
+  /* own boat */
+  if (S.pos){
+    const q=proj(S.pos[0],S.pos[1]);
+    const hdg=(S.cog!=null?S.cog:0)*D2R;
+    ctx.save(); ctx.translate(q[0],q[1]); ctx.rotate(hdg);
+    ctx.fillStyle=cssVar('--ink'); ctx.strokeStyle=cssVar('--ground'); ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(0,-9); ctx.lineTo(5.5,7); ctx.lineTo(0,4); ctx.lineTo(-5.5,7);
+    ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+    if (S.plan){
+      const r=Math.min(cw,ch)*0.30, a=S.plan.steer*D2R;
+      ctx.strokeStyle=cssVar('--accent'); ctx.lineWidth=1.4; ctx.setLineDash([5,4]);
+      ctx.beginPath(); ctx.moveTo(q[0],q[1]);
+      ctx.lineTo(q[0]+Math.sin(a)*r, q[1]-Math.cos(a)*r); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+
+  /* scale bar */
+  const nmPx = (1852/ ( (S.view.lo1-S.view.lo0)*DATA.proj.mPerDegLon )) * cw;
+  ctx.strokeStyle=cssVar('--ink-faint'); ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(12,44); ctx.lineTo(12+nmPx,44); ctx.stroke();
+  ctx.fillStyle=cssVar('--ink-faint'); ctx.font='500 10px '+cssVar('--f-body');
+  ctx.fillText('1 nm', 12, 39);
+}
+function strokePath(path,color,w){
+  ctx.strokeStyle=color; ctx.lineWidth=w; ctx.lineJoin='round'; ctx.lineCap='round';
+  ctx.beginPath();
+  path.forEach((p,k)=>{ const q=proj(p.lon,p.lat); k?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); });
+  ctx.stroke();
+}
+function hexRGB(h){
+  h=h.replace('#','').trim();
+  if(h.length===3) h=h.split('').map(c=>c+c).join('');
+  return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];
+}
+function mix(a,b,t){ return [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t]; }
+
+/* ------------------------------------------------------------------- GPS */
+let watchId=null;
+function startGps(){
+  if (!navigator.geolocation){
+    $('calNote').textContent = 'This browser exposes no geolocation API.'; return;
+  }
+  setDot('dGps','warn');
+  watchId = navigator.geolocation.watchPosition(p=>{
+    S.sim=false;
+    S.pos=[p.coords.longitude, p.coords.latitude];
+    if (p.coords.heading!=null && !isNaN(p.coords.heading)) S.cog=p.coords.heading;
+    if (p.coords.speed!=null && !isNaN(p.coords.speed)) S.sog=p.coords.speed*1.94384;
+    S.posTime=Date.now();
+    pushTrail();
+    setDot('dGps','ok');
+    onFix();
+  }, err=>{
+    setDot('dGps','bad');
+    $('calNote').textContent = 'Location unavailable: ' + err.message
+      + (S.canFetch ? '' : ' — a page served from claude.ai may not be granted location. '
+        + 'Use the copy on your own host, or Simulate.');
+  }, {enableHighAccuracy:true, maximumAge:2000, timeout:20000});
+  $('btnGps').textContent='GPS running';
+}
+function pushTrail(){
+  const last=S.trail[S.trail.length-1];
+  if (!last || Math.hypot(S.pos[0]-last[0],S.pos[1]-last[1])>0.0004) S.trail.push(S.pos.slice());
+  if (S.trail.length>4000) S.trail.shift();
+}
+function onFix(){
+  if (S.follow) followView();
+  runCal();
+  applyWindSource();
+  solve(false);
+  renderTiles(); renderCall(); draw();
+}
+function runCal(){
+  if (!S.router || !S.pos || S.cog==null || S.sog==null || S.sog<1) return;
+  const c = M.Live.gpsCheck(S.router, S.pos[0], S.pos[1], nowHours(), S.cog, S.sog);
+  S.cal = c;
+  $('calPred').textContent = c.ok ? c.predictedSog.toFixed(2) : '--';
+  $('calRatio').textContent = c.ok ? c.ratio.toFixed(2) : '--';
+  $('btnApplyCal').disabled = !c.ok;
+  if (c.ok){
+    const pct = Math.abs(c.ratio-1)*100;
+    $('calNote').textContent = pct<6
+      ? `Model and GPS agree to ${pct.toFixed(0)}%. Nothing to correct.`
+      : `You are sailing ${c.ratio>1?'faster':'slower'} than the model by ${pct.toFixed(0)}%. `
+        + `Most often that is the wind, not the boat — applying it scales the wind field.`;
+  }
+}
+
+/* --------------------------------------------------------------- simulate */
+function startSim(){
+  if (!S.route || !S.route.ok){ solve(true); }
+  S.sim = true; S.simIdx = 0;
+  S.simPath = (S.route&&S.route.ok) ? S.route.path : null;
+  if (!S.simPath) return;
+  S.clockMode='manual'; setSeg('segClock','clock','manual');
+  $('btnSim').textContent='Simulating';
+  setDot('dGps','warn');
+  clearInterval(simTimer);
+  simTimer = setInterval(()=>{
+    if (!S.simPath || S.simIdx>=S.simPath.length-1){ clearInterval(simTimer); return; }
+    const a=S.simPath[S.simIdx], b=S.simPath[Math.min(S.simIdx+1,S.simPath.length-1)];
+    S.pos=[a.lon,a.lat];
+    S.cog=M.bearing([a.lon,a.lat],[b.lon,b.lat],S.grid);
+    const dt=Math.max(b.t-a.t,1e-5);
+    S.sog=M.distNm([a.lon,a.lat],[b.lon,b.lat],S.grid)/dt;
+    S.manualTime=a.t; $('rTime').value=a.t; $('mTime').textContent=hhmm(a.t);
+    pushTrail();
+    S.simIdx += 2;
+    if (S.follow) followView();
+    runCal(); renderTiles(); renderCall(); draw();
+  }, 700);
+}
+let simTimer=null;
+
+/* ------------------------------------------------------------------ lanes */
+/* corridors come from the Python model (sweep.LANES), keyed by course */
+function laneSet(){
+  const L = (DATA.lanes && DATA.lanes[S.course]) || {};
+  return L[S.leg==='back' ? 'back' : 'out'] || {};
+}
+function laneMask(wps, halfW){
+  const g=S.grid, m=new Uint8Array(g.N);
+  const pts = wps.map(p=>[(p[0]-g.lon0)*g.mLon,(p[1]-g.lat0)*g.mLat]);
+  for (let i=0;i<g.N;i++){
+    let best=Infinity;
+    for (let k=1;k<pts.length;k++){
+      const a=pts[k-1],b=pts[k];
+      const vx=b[0]-a[0], vy=b[1]-a[1], L2=Math.max(vx*vx+vy*vy,1e-9);
+      let t=((g.X[i]-a[0])*vx+(g.Y[i]-a[1])*vy)/L2; t=clamp(t,0,1);
+      best=Math.min(best,Math.hypot(g.X[i]-(a[0]+t*vx), g.Y[i]-(a[1]+t*vy)));
+    }
+    m[i]= best>halfW ? 1:0;
+  }
+  return m;
+}
+function compareLanes(){
+  if (!S.route || !S.route.ok) return;
+  const set = laneSet();
+  const from = originNow(), to = activeTarget();
+  const t0 = (S.leg==='pre')?S.startT:nowHours();
+  const rows=[];
+  for (const [name,wps] of Object.entries(set)){
+    const r = S.router.route(from,to,t0,{forbid:laneMask(wps, DATA.laneHalfWidthM||1500)});
+    rows.push({name, h: r.ok?r.elapsed:Infinity, d: r.ok?r.elapsed-S.route.elapsed:Infinity});
+  }
+  rows.sort((a,b)=>a.h-b.h);
+  S.lanes=rows; renderLanes();
+}
+
+/* ----------------------------------------------------------------- wiring */
+function setSeg(id, attr, val){
+  [...$(id).children].forEach(b=>b.setAttribute('aria-pressed', String(b.dataset[attr]===val)));
+}
+$('segCourse').onclick = e => { const b=e.target.closest('button'); if(!b) return;
+  S.course=b.dataset.course; setSeg('segCourse','course',S.course); S.lanes=null; renderLanes();
+  solve(true); setTimeout(compareLanes, 120); };
+$('segLeg').onclick = e => { const b=e.target.closest('button'); if(!b) return;
+  S.leg=b.dataset.leg; setSeg('segLeg','leg',S.leg); S.lanes=null; renderLanes(); solve(true); };
+$('segWind').onclick = e => { const b=e.target.closest('button'); if(!b) return;
+  S.windSrc=b.dataset.src; setSeg('segWind','src',S.windSrc); applyWindSource();
+  renderData(); solve(true); };
+$('segClock').onclick = e => { const b=e.target.closest('button'); if(!b) return;
+  S.clockMode=b.dataset.clock; setSeg('segClock','clock',S.clockMode); solve(true); };
+
+$('rTws').oninput = e => { S.manualTws=+e.target.value; $('mTws').textContent=S.manualTws;
+  if(S.windSrc==='manual'){ applyWindSource(); solve(true);} };
+$('rTwd').oninput = e => { S.manualTwd=+e.target.value; $('mTwd').textContent=S.manualTwd;
+  if(S.windSrc==='manual'){ applyWindSource(); solve(true);} };
+$('rCur').oninput = e => { S.curScale=+e.target.value; $('mCur').textContent=S.curScale.toFixed(2);
+  S.cf.strength=S.curScale; S.router.fieldCache.clear(); S.router.edgeCache.clear(); };
+$('rCur').onchange = () => solve(true);
+$('rPol').oninput = e => { S.polScale=+e.target.value; $('mPol').textContent=S.polScale.toFixed(2);
+  S.polar=new M.Polar(DATA,S.polScale); S.router.polar=S.polar; S.router.edgeCache.clear();
+  $('mPhrf').textContent=Math.round(impliedPhrf(S.polar)); };
+$('rPol').onchange = () => solve(true);
+$('rRes').oninput = e => { $('mRes').textContent=e.target.value; };
+$('rRes').onchange = e => { S.res=+e.target.value; buildFields(); fieldCanvas=null; solve(true); renderData(); };
+$('rTime').oninput = e => { S.manualTime=+e.target.value; $('mTime').textContent=hhmm(S.manualTime);
+  if(S.clockMode==='manual'){ renderTiles(); draw(); } };
+$('rTime').onchange = () => { if(S.clockMode==='manual') solve(true); };
+$('inStart').onchange = e => { const [h,m]=e.target.value.split(':'); S.startT=+h+ +m/60; solve(true); };
+
+$('btnGps').onclick = startGps;
+$('btnSim').onclick = startSim;
+$('btnSolve').onclick = () => { solve(true); setTimeout(compareLanes, 120); };
+$('btnRefresh').onclick = () => loadLive(true);
+$('btnApplyCal').onclick = () => {
+  if (!S.cal || !S.cal.ok) return;
+  const k = clamp(S.cal.ratio, 0.7, 1.4);
+  /*
+    Do not compound: set the scale from the baseline each time.  And upwind
+    above ~16 kt the polar is nearly flat in wind speed, so scaling the wind
+    barely moves the prediction, the ratio persists, and repeated taps would
+    walk the wind field into nonsense while never closing the gap.  In that
+    regime the honest correction is the boat, not the breeze.
+  */
+  const twaNow = Math.abs(((S.cog - S.cal.twdDeg + 540) % 360) - 180);
+  const plateau = twaNow < 60 && S.cal.tws > 15;
+  if (plateau){
+    S.polScale = clamp(S.polScale * k, 0.88, 1.12);
+    $('rPol').value = S.polScale; $('mPol').textContent = S.polScale.toFixed(2);
+    S.polar = new M.Polar(DATA, S.polScale); S.router.polar = S.polar;
+    S.router.edgeCache.clear();
+    $('mPhrf').textContent = Math.round(impliedPhrf(S.polar));
+    $('calNote').textContent = `Upwind in ${S.cal.tws.toFixed(0)} kt the polar is `
+      + `flat in wind speed, so this went to boatspeed: scale now ×${S.polScale.toFixed(2)} `
+      + `(implied PHRF ${Math.round(impliedPhrf(S.polar))}).`;
+  } else {
+    S.windCal = clamp((S.windCal || 1) * k, 0.7, 1.4);
+    S.wf.speedScale = S.windCal;
+    S.router.fieldCache.clear(); S.router.edgeCache.clear();
+    $('calNote').textContent = `Wind field scaled by ×${S.windCal.toFixed(2)} `
+      + `from baseline. Re-routing.`;
+  }
+  solve(true);
+};
+$('btnLayer').onclick = () => { S.layer = S.layer==='current'?'wind':'current';
+  $('btnLayer').textContent = S.layer==='current'?'Current':'Wind'; draw(); };
+$('btnFollow').onclick = () => { S.follow=!S.follow;
+  $('btnFollow').setAttribute('aria-pressed',String(S.follow));
+  if (S.follow) followView(); draw(); };
+$('btnFit').onclick = () => { fitView(); draw(); };
+$('btnTheme').onclick = () => {
+  const cur = document.documentElement.getAttribute('data-theme');
+  document.documentElement.setAttribute('data-theme', cur==='light'?'dark':'light');
+  fieldCanvas=null; draw();
+};
+
+/* pan / pinch on the chart */
+let drag=null;
+cv.addEventListener('pointerdown', e=>{ drag={x:e.clientX,y:e.clientY,v:{...S.view}};
+  cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointermove', e=>{
+  if(!drag) return;
+  const dx=(e.clientX-drag.x)/cw*(drag.v.lo1-drag.v.lo0);
+  const dy=(e.clientY-drag.y)/ch*(drag.v.la1-drag.v.la0);
+  S.view={lo0:drag.v.lo0-dx, lo1:drag.v.lo1-dx, la0:drag.v.la0+dy, la1:drag.v.la1+dy};
+  S.follow=false; $('btnFollow').setAttribute('aria-pressed','false'); draw();
+});
+cv.addEventListener('pointerup', ()=>drag=null);
+cv.addEventListener('wheel', e=>{
+  e.preventDefault();
+  const k = e.deltaY>0?1.12:0.89;
+  const cx=(S.view.lo0+S.view.lo1)/2, cy=(S.view.la0+S.view.la1)/2;
+  const w=(S.view.lo1-S.view.lo0)*k/2, h=(S.view.la1-S.view.la0)*k/2;
+  S.view={lo0:cx-w,lo1:cx+w,la0:cy-h,la1:cy+h}; draw();
+},{passive:false});
+
+window.addEventListener('resize', resize);
+
+/* keep the screen awake while racing */
+let wl=null;
+async function wake(){ try{ if('wakeLock' in navigator) wl = await navigator.wakeLock.request('screen'); }catch(e){} }
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') wake(); });
+
+/* ------------------------------------------------------------------- boot */
+function tick(){
+  $('clock').textContent = hhmm(nowHours());
+  if (S.clockMode==='live'){ renderTiles(); }
+}
+function boot(){
+  $('ftBuild').textContent = `Model data built ${DATA.meta.built.slice(0,10)} · `
+    + `${DATA.stations.length} NOAA current stations, ${DATA.derivedZones.length} hand zones, `
+    + `${DATA.metStations.length} anemometers · polar: ${DATA.polar.name}`;
+  buildFields();
+  $('obsNote').innerHTML = '<b>SI 10 obstructions (hard, crossing = retire):</b> '
+    + (DATA.obstructions||[]).map(o => `${o.si} ${o.name.split(' to ')[0]} <span style="color:var(--ink-faint)">[${o.status.split(' ')[0]}]</span>`).join(' · ')
+    + '. Drawn red on the chart; the router cannot cross them.';
+  $('mPhrf').textContent = Math.round(impliedPhrf(S.polar));
+  fitView(); resize();
+  renderData();
+  solve(true);
+  setTimeout(compareLanes, 400);
+  setInterval(tick, 1000);
+  setInterval(()=>{ if (S.pos && !S.sim) solve(false); }, 20000);
+  /* anemometer data is 6-minute; refetch so the sea breeze actually fills */
+  setInterval(()=>{ if (S.canFetch && !S.sim) loadLive(false); }, 6*60*1000);
+  loadLive(false);
+  wake();
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
+})();
+</script>

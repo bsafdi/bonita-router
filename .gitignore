@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+out/*.png
+out/*.txt
+data/cache/wind_*.json

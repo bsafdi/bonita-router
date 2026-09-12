@@ -1,0 +1,1178 @@
+<title>Bonita Router</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+:root{
+  --ground:#0b1220; --surface:#131e2e; --surface2:#1a2739; --line:#26364c;
+  --ink:#e8eef6; --ink-dim:#93a6be; --ink-faint:#61758f;
+  --accent:#f2b233; --accent-dim:#8a6820;
+  --port:#e4453c; --stbd:#2fbf71;
+  --flood:#f2724b; --ebb:#4fa8e8;
+  --land:#26313f; --land-edge:#33404f;
+  --ok:#2fbf71; --warn:#f2b233; --bad:#e4453c;
+  --r:4px;
+  --f-disp:"Barlow Condensed",ui-sans-serif,system-ui,sans-serif;
+  --f-body:"IBM Plex Sans",ui-sans-serif,system-ui,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+:root[data-theme="light"]{
+  --ground:#f2f4f7; --surface:#ffffff; --surface2:#e9edf3; --line:#c8d2df;
+  --ink:#14202f; --ink-dim:#4b5c73; --ink-faint:#7a8ba3;
+  --accent:#a3701a; --accent-dim:#d9b46a;
+  --port:#c62b22; --stbd:#12813f;
+  --flood:#c2481f; --ebb:#1f6ea8;
+  --land:#e2dcc9; --land-edge:#c9c1a8;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--ground);color:var(--ink);
+  font-family:var(--f-body);-webkit-text-size-adjust:100%}
+body{min-height:100vh;display:flex;flex-direction:column;
+  padding-bottom:env(safe-area-inset-bottom)}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.num{font-family:var(--f-disp);font-variant-numeric:tabular-nums;font-weight:700;
+  line-height:.92;letter-spacing:.01em}
+.lbl{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);
+  font-weight:600}
+
+/* ---------- status strip ---------- */
+#bar{display:flex;align-items:center;gap:10px;padding:7px 12px;background:var(--surface);
+  border-bottom:1px solid var(--line);flex-wrap:wrap;position:sticky;top:0;z-index:20}
+#bar .clock{font-family:var(--f-mono);font-size:15px;font-weight:500;letter-spacing:.02em}
+.chip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;
+  letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:99px;
+  border:1px solid var(--line);color:var(--ink-dim);white-space:nowrap}
+.chip b{font-weight:600;color:var(--ink)}
+.dot{width:6px;height:6px;border-radius:50%;background:var(--ink-faint);flex:none}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--bad)}
+#bar .spacer{flex:1}
+
+/* ---------- decision block ---------- */
+#call{padding:14px 12px 12px;border-bottom:1px solid var(--line);
+  background:linear-gradient(180deg,var(--surface) 0%,var(--ground) 100%)}
+#callRow{display:flex;align-items:flex-start;gap:14px}
+#callWord{font-family:var(--f-disp);font-weight:700;font-size:clamp(38px,13vw,64px);
+  line-height:.86;letter-spacing:-.01em;text-wrap:balance}
+#callWord.port{color:var(--port)} #callWord.stbd{color:var(--stbd)}
+#callWord.hold{color:var(--ink)} #callWord.wait{color:var(--ink-faint)}
+#callSub{font-size:12.5px;color:var(--ink-dim);margin-top:6px;line-height:1.35;max-width:34ch}
+#steer{margin-left:auto;text-align:right;flex:none}
+#steer .num{font-size:clamp(40px,14vw,68px);color:var(--accent)}
+#steer .deg{font-size:.44em;vertical-align:super;margin-left:1px}
+
+#tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);
+  border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.tile{background:var(--ground);padding:9px 10px 10px;min-width:0}
+.tile .lbl{margin-bottom:5px}
+.tile .num{font-size:clamp(21px,6.4vw,30px)}
+.tile .u{font-size:11px;color:var(--ink-faint);font-family:var(--f-body);font-weight:500;
+  margin-left:2px;letter-spacing:0}
+.tile.alarm .num{color:var(--accent)}
+.tile .sub{font-size:10px;color:var(--ink-faint);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ---------- chart ---------- */
+#chartWrap{position:relative;flex:1;min-height:230px;background:var(--ground)}
+#chart{display:block;width:100%;height:100%;touch-action:none}
+#chartTools{position:absolute;top:8px;right:8px;display:flex;gap:5px}
+.tool{background:color-mix(in srgb,var(--surface) 86%,transparent);
+  border:1px solid var(--line);border-radius:var(--r);padding:5px 8px;font-size:10.5px;
+  font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-dim)}
+.tool[aria-pressed="true"]{color:var(--ground);background:var(--accent);border-color:var(--accent)}
+#legend{position:absolute;left:8px;bottom:8px;display:flex;gap:9px;flex-wrap:wrap;
+  font-size:10px;color:var(--ink-dim);background:color-mix(in srgb,var(--surface) 86%,transparent);
+  border:1px solid var(--line);border-radius:var(--r);padding:5px 7px}
+#legend i{display:inline-block;width:9px;height:3px;border-radius:2px;margin-right:4px;
+  vertical-align:middle}
+
+/* ---------- panels ---------- */
+#panels{background:var(--ground);border-top:1px solid var(--line)}
+details{border-bottom:1px solid var(--line)}
+summary{list-style:none;cursor:pointer;padding:11px 12px;display:flex;align-items:center;
+  gap:9px;font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-dim)}
+summary::-webkit-details-marker{display:none}
+summary::after{content:"";margin-left:auto;width:6px;height:6px;border-right:1.5px solid currentColor;
+  border-bottom:1.5px solid currentColor;transform:rotate(45deg);transition:transform .15s}
+details[open] summary::after{transform:rotate(-135deg)}
+.body{padding:0 12px 14px;display:flex;flex-direction:column;gap:12px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.field{display:flex;flex-direction:column;gap:5px}
+input[type=range]{width:100%;accent-color:var(--accent);height:26px}
+.rowval{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.rowval .num{font-size:19px}
+table{width:100%;border-collapse:collapse;font-family:var(--f-mono);font-size:11.5px}
+th,td{text-align:right;padding:3px 4px;border-bottom:1px solid var(--line);
+  font-variant-numeric:tabular-nums}
+th{color:var(--ink-faint);font-weight:500;font-size:10px;letter-spacing:.06em;
+  text-transform:uppercase;font-family:var(--f-body)}
+td:first-child,th:first-child{text-align:left}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.btn{background:var(--surface2);border:1px solid var(--line);border-radius:var(--r);
+  padding:10px 12px;font-size:12px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink);text-align:center}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#12181f}
+.btn:disabled{opacity:.45}
+.btnrow{display:flex;gap:8px}
+.btnrow>*{flex:1}
+.seg{display:flex;border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.seg button{flex:1;padding:9px 6px;font-size:11px;font-weight:600;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--ink-dim);background:var(--surface)}
+.seg button[aria-pressed="true"]{background:var(--accent);color:#12181f}
+.note{font-size:11.5px;color:var(--ink-faint);line-height:1.5}
+.note b{color:var(--ink-dim);font-weight:600}
+.bad{color:var(--bad)} .good{color:var(--ok)} .warnc{color:var(--warn)}
+#foot{padding:14px 12px 20px;font-size:11px;color:var(--ink-faint);line-height:1.55;
+  border-top:1px solid var(--line)}
+@media (min-width:760px){
+  #tiles{grid-template-columns:repeat(4,1fr)}
+  .grid2{grid-template-columns:repeat(4,1fr)}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+
+<div id="bar">
+  <span class="clock" id="clock">--:--</span>
+  <span class="chip" id="chGps"><i class="dot" id="dGps"></i><span>GPS</span></span>
+  <span class="chip" id="chData"><i class="dot" id="dData"></i><span id="tData">DATA</span></span>
+  <span class="chip" id="chSolve"><i class="dot" id="dSolve"></i><span id="tSolve">MODEL</span></span>
+  <span class="spacer"></span>
+  <button class="tool" id="btnTheme" title="Toggle theme">◐</button>
+</div>
+
+<div id="call">
+  <div id="callRow">
+    <div>
+      <div id="callWord" class="wait">STANDBY</div>
+      <div id="callSub">Waiting for a position fix. Open the Position panel to run in simulate mode instead.</div>
+    </div>
+    <div id="steer">
+      <div class="lbl">Steer</div>
+      <div class="num"><span id="steerVal">---</span><span class="deg">°</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="tiles">
+  <div class="tile"><div class="lbl">Your COG / SOG</div>
+    <div class="num"><span id="tCog">---</span><span class="u">° <span id="tSog">--</span> kt</span></div></div>
+  <div class="tile" id="tileNext"><div class="lbl">Next move</div>
+    <div class="num"><span id="tNext">--</span><span class="u" id="tNextU"> min</span></div>
+    <div class="sub" id="tNextD">&nbsp;</div></div>
+  <div class="tile"><div class="lbl" id="lblMark">To Bonita</div>
+    <div class="num"><span id="tToMark">--</span><span class="u">nm</span></div></div>
+  <div class="tile"><div class="lbl" id="lblEta">Finish ETA</div>
+    <div class="num"><span id="tEta">--:--</span></div></div>
+</div>
+
+<div id="chartWrap">
+  <canvas id="chart"></canvas>
+  <div id="chartTools">
+    <button class="tool" id="btnLayer" aria-pressed="true">Current</button>
+    <button class="tool" id="btnFollow" aria-pressed="true">Follow</button>
+    <button class="tool" id="btnFit">Fit</button>
+  </div>
+  <div id="legend">
+    <span><i style="background:var(--accent)"></i>plan</span>
+    <span><i style="background:var(--ink)"></i>sailed</span>
+    <span><i style="background:var(--flood)"></i>flood</span>
+    <span><i style="background:var(--ebb)"></i>ebb</span>
+    <span><i style="background:#ff3b3b"></i>SI 10 no-go</span>
+    <span><i style="background:#9fb4ff;opacity:.7"></i>ship lane</span>
+  </div>
+</div>
+
+<div id="panels">
+
+<details id="pLeg">
+  <summary>Race state</summary>
+  <div class="body">
+    <div class="lbl" style="margin-bottom:4px">Course (numeral pennant at the 11:00 warning)</div>
+    <div class="seg" id="segCourse">
+      <button data-course="1" aria-pressed="true">1 · PB (Bonita)</button>
+      <button data-course="2" aria-pressed="false">2 · EASOM</button>
+    </div>
+    <div class="seg" id="segLeg" style="margin-top:8px">
+      <button data-leg="pre" aria-pressed="false">Pre-start</button>
+      <button data-leg="out" aria-pressed="true" id="btnLegOut">To mark</button>
+      <button data-leg="back" aria-pressed="false">To finish</button>
+    </div>
+    <div class="grid2">
+      <div class="rowval"><span class="lbl" id="lblRound">Round mark</span><span class="num" id="vRound">--:--</span></div>
+      <div class="rowval"><span class="lbl">Finish</span><span class="num" id="vFinish">--:--</span></div>
+      <div class="rowval"><span class="lbl">Elapsed so far</span><span class="num" id="vElapsed">--</span></div>
+      <div class="rowval"><span class="lbl">Remaining</span><span class="num" id="vRemain">--</span></div>
+      <div class="rowval"><span class="lbl">Time limit (SI 6.2)</span><span class="num" id="vLimit">19:00</span></div>
+      <div class="rowval"><span class="lbl">In hand</span><span class="num" id="vInHand">--</span></div>
+    </div>
+    <div class="note" id="zones">Shipping-lane crossings appear once a route is solved.</div>
+    <div class="note" id="obsNote"></div>
+    <div class="field"><span class="lbl">Start time (first gun)</span>
+      <input type="time" id="inStart" value="11:05" style="background:var(--surface);
+        border:1px solid var(--line);border-radius:var(--r);padding:8px;color:var(--ink);
+        font-family:var(--f-mono)"></div>
+    <div class="note" id="lanes">Lane comparison appears once a route is solved.</div>
+  </div>
+</details>
+
+<details id="pWind">
+  <summary>Wind</summary>
+  <div class="body">
+    <div class="grid2">
+      <div class="rowval"><span class="lbl">Model here</span><span class="num"><span id="wHere">--</span><span class="u"> kt</span></span></div>
+      <div class="rowval"><span class="lbl">From</span><span class="num"><span id="wDir">---</span><span class="u">°</span></span></div>
+    </div>
+    <div class="seg" id="segWind">
+      <button data-src="auto" aria-pressed="true">Live + forecast</button>
+      <button data-src="manual" aria-pressed="false">Manual</button>
+    </div>
+    <div class="field"><span class="lbl">Observed TWS here <b id="mTws">19</b> kt</span>
+      <input type="range" id="rTws" min="3" max="35" step="0.5" value="19"></div>
+    <div class="field"><span class="lbl">Observed TWD <b id="mTwd">255</b>° true</span>
+      <input type="range" id="rTwd" min="180" max="330" step="1" value="255"></div>
+    <div class="note" id="windNote">Live anemometer data not loaded yet.</div>
+    <div class="scroll"><table id="obsTable"></table></div>
+  </div>
+</details>
+
+<details id="pCur">
+  <summary>Current</summary>
+  <div class="body">
+    <div class="grid2">
+      <div class="rowval"><span class="lbl">Set here</span><span class="num"><span id="cHere">--</span><span class="u"> kt</span></span></div>
+      <div class="rowval"><span class="lbl">Toward</span><span class="num"><span id="cDir">---</span><span class="u">°</span></span></div>
+    </div>
+    <div class="note" id="curNote"></div>
+    <div class="scroll"><table id="stnTable"></table></div>
+    <div class="field"><span class="lbl">Current strength &times;<b id="mCur">1.00</b></span>
+      <input type="range" id="rCur" min="0.6" max="1.4" step="0.02" value="1"></div>
+  </div>
+</details>
+
+<details id="pPos">
+  <summary>Position &amp; calibration</summary>
+  <div class="body">
+    <div class="btnrow">
+      <button class="btn primary" id="btnGps">Start GPS</button>
+      <button class="btn" id="btnSim">Simulate</button>
+    </div>
+    <div class="grid2">
+      <div class="rowval"><span class="lbl">Latitude</span><span class="num" id="pLat" style="font-size:15px">--</span></div>
+      <div class="rowval"><span class="lbl">Longitude</span><span class="num" id="pLon" style="font-size:15px">--</span></div>
+    </div>
+    <div class="note" id="calNote">The model compares your GPS speed with what it predicts for your
+      course, position and time. A ratio that stays away from 1.00 means the wind or the polar is off.</div>
+    <div class="grid2">
+      <div class="rowval"><span class="lbl">Predicted SOG</span><span class="num" id="calPred" style="font-size:19px">--</span></div>
+      <div class="rowval"><span class="lbl">Ratio obs/pred</span><span class="num" id="calRatio" style="font-size:19px">--</span></div>
+    </div>
+    <button class="btn" id="btnApplyCal" disabled>Apply as wind correction</button>
+    <div class="field"><span class="lbl">Boatspeed scale &times;<b id="mPol">1.00</b> &mdash; implied PHRF <b id="mPhrf">--</b></span>
+      <input type="range" id="rPol" min="0.88" max="1.12" step="0.01" value="1"></div>
+  </div>
+</details>
+
+<details id="pSet">
+  <summary>Model &amp; data</summary>
+  <div class="body">
+    <div class="field"><span class="lbl">Grid resolution <b id="mRes">250</b> m &mdash; finer is slower</span>
+      <input type="range" id="rRes" min="200" max="450" step="50" value="250"></div>
+    <div class="field"><span class="lbl">Model clock</span>
+      <div class="seg" id="segClock">
+        <button data-clock="live" aria-pressed="true">Live</button>
+        <button data-clock="manual" aria-pressed="false">Set time</button>
+      </div></div>
+    <div class="field"><span class="lbl">Time <b id="mTime">--:--</b></span>
+      <input type="range" id="rTime" min="8" max="21" step="0.0833" value="10.25"></div>
+    <div class="btnrow">
+      <button class="btn" id="btnRefresh">Refresh NOAA</button>
+      <button class="btn primary" id="btnSolve">Re-route now</button>
+    </div>
+    <div class="note" id="dataNote"></div>
+  </div>
+</details>
+
+</div>
+
+<div id="foot">
+  <b>What this is.</b> A time-optimal router for the BYC Big Windward&ndash;Leeward Regatta
+  (course 1 to Point Bonita, course 2 to EASOM, signalled at the 11:00 warning),
+  solving an earliest-arrival Dijkstra over a tidal current field built from
+  <span id="ftStations">8</span> NOAA current stations plus hand zones for the water NOAA does not
+  instrument &mdash; including the Cityfront flood back-eddy and the Yellow Bluff ebb back-eddy,
+  which are what decide this race.
+  <br><br>
+  <b>What to distrust.</b> The Olson&nbsp;25 polar is constructed, not measured: absolute times are
+  only as good as that table, though lane comparisons are far more robust because the error largely
+  cancels. The coastline is hand-digitized. The wind field has no shifts, gusts or puff structure, so
+  the router never decides under uncertainty &mdash; it also knows the future exactly, which is worth
+  real time on a course where the tide turns mid-race. Treat its elapsed time as an optimistic bound
+  and its lane calls as the useful part. The SI&nbsp;10 obstruction lines are hard barriers in the
+  router; five of the six are taken from the NOAA ENC, the "H" beam is placed from the SI text only.
+  Marks are routed to, not rounded &mdash; leave them to port yourself (SI&nbsp;12.3).
+  <br><br>
+  <span id="ftBuild"></span>
+</div>
+<script src="MODEL_JS_PLACEHOLDER"></script>
+<script>
+"use strict";
+(function(){
+const M = window.BonitaModel;
+const DATA = window.BONITA_DATA;
+const $ = id => document.getElementById(id);
+const D2R = Math.PI/180, R2D = 180/Math.PI;
+const clamp=(v,a,b)=>v<a?a:v>b?b:v;
+const seaBreezeOf = M.seaBreeze;
+const hhmm = M.hhmm;
+
+/* ------------------------------------------------------------------ state */
+const S = {
+  res: 250, grid:null, cf:null, wf:null, polar:null, router:null,
+  series:{}, obs:[], forecast:null, profile:null,
+  windSrc:'auto', manualTws:19, manualTwd:255,
+  curScale:1, polScale:1,
+  clockMode:'live', manualTime:10.25,
+  leg:'out', startT:(DATA.race && DATA.race.startH) || 11.0833, course:'1',
+  pos:null, cog:null, sog:null, posTime:null,
+  sim:false, simIdx:0, simPath:null,
+  route:null, routeBack:null, plan:null, solving:false, lastSolve:0,
+  trail:[], layer:'current', follow:true, view:null,
+  cal:null, dataStatus:'', liveOk:false, canFetch:true, lanes:null,
+};
+
+/* Whether outbound fetch is even possible here.  A page served from
+   claude.ai runs under a CSP that blocks it; the same file on your own https
+   host does not.  Detect rather than assume. */
+S.canFetch = !/(^|\.)claude\.(ai|com)$/.test(location.hostname) &&
+             location.protocol !== 'null:' && location.protocol !== 'data:';
+
+function nowHours(){
+  if (S.clockMode === 'manual') return S.manualTime;
+  const d = new Date();
+  return d.getHours() + d.getMinutes()/60 + d.getSeconds()/3600;
+}
+
+/* --------------------------------------------------------------- build it */
+function buildFields(){
+  S.grid = new M.Grid(DATA, S.res);
+  S.series = {};
+  for (const [id, s] of Object.entries(DATA.fallbackSeries || {}))
+    S.series[id] = new M.RefSeries(s.t, s.v);
+  for (const [id, s] of Object.entries(S.liveSeries || {}))
+    S.series[id] = new M.RefSeries(s.t, s.v);
+  S.cf = new M.CurrentField(S.grid, DATA, S.series, {strength: S.curScale});
+  S.wf = new M.WindField(S.grid, DATA, {});
+  applyWindSource();
+  S.polar = new M.Polar(DATA, S.polScale);
+  S.router = new M.Router(S.grid, S.wf, S.cf, S.polar, {currentScale: 1});
+  $('ftStations').textContent = S.cf.nZonesMeasured();
+}
+
+function applyWindSource(){
+  if (!S.wf) return;
+  if (S.windSrc === 'manual'){
+    /*
+      Your observed wind, turned into a domain mean by dividing out the
+      field's structural multiplier where you saw it -- then used to SCALE the
+      diurnal curve, not to replace it.  Freezing the whole day at the 8 kt you
+      see at the start planned the 14:30 run in 8 kt and put two hours on the
+      predicted finish.
+
+      The reference point is frozen when you switch to manual, so sailing from
+      the Berkeley Circle into the Gate does not silently change what your
+      typed number means.
+    */
+    if (!S.manualRef) S.manualRef = (S.pos || DATA.marks.start).slice();
+    const st = S.wf.structAt(S.manualRef[0], S.manualRef[1]) || 1;
+    const tRef = nowHours();
+    const curve = (t) => seaBreezeOf(S.wf.breeze, t);
+    const k = (S.manualTws / st) / Math.max(curve(tRef), 0.5);
+    S.wf.profile = { mean: (t) => curve(t) * k };
+    S.wf.dirOffset = (S.manualTwd - S.wf.dirAt(S.manualRef[0], S.manualRef[1]) * R2D) * D2R;
+    S.profile = {source:'manual', anchored:true, nObs:1, anchor:k, tObs:tRef};
+  } else {
+    S.manualRef = null;
+    S.profile = M.Live.buildProfile(S.wf, {
+      forecast: S.forecast, obs: S.obs, tNow: nowHours(), relaxHours: 3,
+      domain: DATA.domain });
+    S.wf.profile = S.profile;
+    S.wf.dirOffset = (S.profile.dirErr != null) ? S.profile.dirErr * D2R : 0;
+  }
+  if (S.router) S.router.fieldCache.clear(), S.router.edgeCache.clear();
+}
+
+/* ------------------------------------------------------------- live data */
+async function loadLive(force){
+  const date = DATA.meta.date;
+  setDot('dData','warn'); $('tData').textContent = 'FETCHING';
+  if (!S.canFetch){
+    S.dataStatus = 'This copy is served from claude.ai, whose sandbox blocks outbound requests, '
+      + 'so it runs on the NOAA harmonic predictions baked in at build time (' + date + '). '
+      + 'The copy on your own https host fetches live.';
+    setDot('dData','warn'); $('tData').textContent = 'BAKED';
+    S.liveOk = false; renderData(); return;
+  }
+  const ids = DATA.stations.map(s=>s.id);
+  let msg = [];
+  try{
+    const cur = await M.Live.fetchCurrents(date, ids, {force:!!force});
+    S.liveSeries = {};
+    for (const [id,v] of Object.entries(cur.series)) S.liveSeries[id] = v;
+    msg.push(`currents: ${Object.keys(cur.series).length}/${ids.length} stations`
+      + (cur.cachedOnly ? ' (from cache)' : ' live'));
+    S.liveOk = !cur.cachedOnly;
+  }catch(e){ msg.push('currents: failed, using baked predictions'); }
+
+  try{
+    const w = await M.Live.fetchWindObs(DATA.metStations);
+    S.obs = w.obs || [];
+    msg.push(`wind obs: ${S.obs.length} anemometer${S.obs.length===1?'':'s'}`
+      + (w.stale?' (cached)':''));
+  }catch(e){ msg.push('wind obs: unavailable'); }
+
+  try{
+    const pts = [[-122.53,37.815],[-122.478,37.820],[-122.44,37.83],
+                 [-122.40,37.855],[-122.35,37.866],[-122.47,37.855]];
+    const f = await M.Live.fetchWindForecast(date, pts);
+    S.forecast = f.fc;
+    msg.push('forecast: ' + (f.fc ? (f.stale?'cached':'live') : 'unavailable'));
+  }catch(e){ msg.push('forecast: unavailable'); }
+
+  S.dataStatus = msg.join(' · ');
+  setDot('dData', S.liveOk ? 'ok' : 'warn');
+  $('tData').textContent = S.liveOk ? 'LIVE' : 'CACHED';
+  buildFields();
+  renderData();
+  solve(true);
+}
+
+function setDot(id, cls){ const e=$(id); e.className='dot'+(cls?' '+cls:''); }
+
+/* ----------------------------------------------------------------- solver */
+function courseMark(){ return DATA.marks[DATA.courses[S.course].mark]; }
+function courseMarkName(){ return S.course==='2' ? 'EASOM' : 'Bonita'; }
+function activeTarget(){
+  if (S.leg === 'back') return DATA.marks.finish;
+  return courseMark();
+}
+function originNow(){
+  if (S.leg === 'pre' || !S.pos) return DATA.marks.start;
+  return S.pos;
+}
+
+function solve(force){
+  if (S.solving) return;
+  const t = nowHours();
+  if (!force && Date.now() - S.lastSolve < 4000) return;
+  S.solving = true; S.lastSolve = Date.now();
+  setDot('dSolve','warn'); $('tSolve').textContent='SOLVING';
+  /* let the browser paint the SOLVING state before we block on Dijkstra */
+  setTimeout(()=>{
+    const t0 = performance.now();
+    try{
+      const from = originNow();
+      const startT = (S.leg==='pre') ? S.startT : t;
+      let a = S.router.route(from, activeTarget(), startT);
+      S.holdMin = 0;
+      /*
+        The router prices each edge with the field frozen at its departure bin
+        and refuses edges longer than a few bins, so against a peak flood it
+        can honestly report that there is no way through from here right now.
+        That is real information, not a failure -- the answer is to wait.  Find
+        the earliest departure that does get through, and also check whether a
+        later start simply arrives sooner, which against a turning tide it can.
+      */
+      /* the sweep costs four extra solves, so run it when the primary route
+         fails (we need an answer) or on an explicit re-route, never on the
+         20-second background tick */
+      const alt = [];
+      if (!a.ok || force) {
+        for (const dh of [0.25, 0.5, 0.75, 1.0]) {
+          const r = S.router.route(from, activeTarget(), startT + dh);
+          if (r.ok) alt.push({ dh, r });
+          if (!a.ok && r.ok) break;
+        }
+      }
+      if (!a.ok && alt.length) { a = alt[0].r; S.holdMin = Math.round(alt[0].dh*60); }
+      else if (a.ok) {
+        const better = alt.filter(x => x.r.tEnd < a.tEnd - 1/60)
+                          .sort((x,y) => x.r.tEnd - y.r.tEnd)[0];
+        if (better) S.holdMin = Math.round(better.dh*60);
+      }
+      S.route = a;
+      if (a.ok && S.leg !== 'back'){
+        S.routeBack = S.router.route(courseMark(), DATA.marks.finish, a.tEnd);
+      } else if (S.leg === 'back'){ S.routeBack = a; S.route = a; }
+      else S.routeBack = null;
+      S.plan = buildPlan(a, t);
+      S.solveMs = Math.round(performance.now()-t0);
+      setDot('dSolve', a.ok?'ok':'bad');
+      $('tSolve').textContent = a.ok ? (S.solveMs+' MS') : 'NO ROUTE';
+    }catch(e){
+      setDot('dSolve','bad'); $('tSolve').textContent='ERROR';
+      console.error(e);
+    }
+    S.solving = false;
+    renderCall(); renderTiles(); draw();
+  }, 16);
+}
+
+/*
+  Turn the routed path into the two things you actually need at the wheel:
+  the course to steer right now, and where the next manoeuvre is.
+*/
+function buildPlan(route, tNow){
+  if (!route || !route.ok || route.path.length < 2) return null;
+  const g = S.grid, P = route.path;
+  /* recommended COG: average the first ~400 m of the plan so a single grid
+     step's quantisation does not swing the call */
+  /* average only up to the first manoeuvre: averaging across a tack returns a
+     course inside the no-go zone and tells the helm to steer into irons */
+  let stopAt = P.length;
+  {
+    let prevD = P.length>1 ? P[1].dir : -1;
+    const F0 = S.router.fields(route.tStart);
+    const wd0 = F0.twd[g.idx(P[0].lon,P[0].lat)]*R2D;
+    for (let k=2;k<P.length;k++){
+      if (P[k].dir !== prevD){
+        const a1=((S.router.cog[prevD]-wd0+540)%360)-180;
+        const a2=((S.router.cog[P[k].dir]-wd0+540)%360)-180;
+        if (a1*a2 < 0){ stopAt = k; break; }
+      }
+      prevD = P[k].dir;
+    }
+  }
+  let acc = 400, sx=0, sy=0;
+  for (let k=1;k<stopAt && acc>0;k++){
+    const dx=(P[k].lon-P[k-1].lon)*g.mLon, dy=(P[k].lat-P[k-1].lat)*g.mLat;
+    const L=Math.hypot(dx,dy); if(L<1e-6) continue;
+    const w=Math.min(L,acc); sx+=dx/L*w; sy+=dy/L*w; acc-=w;
+  }
+  const steer = ((Math.atan2(sx,sy)*R2D)%360+360)%360;
+
+  const F = S.router.fields(route.tStart);
+  const i0 = g.idx(P[0].lon, P[0].lat);
+  const twd = ((F.twd[i0]*R2D)%360+360)%360, tws = F.tws[i0];
+  const twaSteer = ((steer - twd + 540)%360)-180;
+  const tack = twaSteer < 0 ? 'starboard' : 'port';   /* wind over that side */
+
+  /* first genuine manoeuvre along the plan: a direction change that crosses
+     the wind axis */
+  let man=null;
+  let prevDir = P[1].dir, dist=0;
+  for (let k=1;k<P.length;k++){
+    const dx=(P[k].lon-P[k-1].lon)*g.mLon, dy=(P[k].lat-P[k-1].lat)*g.mLat;
+    dist += Math.hypot(dx,dy);
+    if (k>1 && P[k].dir !== prevDir){
+      const a1 = ((S.router.cog[prevDir]-twd+540)%360)-180;
+      const a2 = ((S.router.cog[P[k].dir]-twd+540)%360)-180;
+      if (a1*a2 < 0){
+        man = { kind: (Math.abs(a1)<90 && Math.abs(a2)<90) ? 'tack' : 'gybe',
+                nm: dist/1852, t: P[k].t,
+                newCog: S.router.cog[P[k].dir] };
+        break;
+      }
+    }
+    prevDir = P[k].dir;
+  }
+
+  /* layline to the mark on the current tack */
+  const target = activeTarget();
+  const brg = M.bearing([P[0].lon,P[0].lat], target, g);
+  const dNm = M.distNm([P[0].lon,P[0].lat], target, g);
+  /*
+    Layline, corrected for current and for which tack you are on.  The
+    uncorrected version was wrong by 15-25 deg at Bonita in 3 kt of set, said
+    "on the layline" while you sailed away on the other tack, and stayed true
+    after you had overstood.
+  */
+  const beat = S.polar.bestVMG(tws, true);
+  const F2 = S.router.fields(route.tStart);
+  const i2 = g.idx(P[0].lon, P[0].lat);
+  const cuk = F2.cu[i2], cvk = F2.cv[i2];
+  const layTwa = twaSteer < 0 ? -beat.twa : beat.twa;      // this tack
+  const hdg = (twd + layTwa) * D2R;
+  const gx = beat.bs*Math.sin(hdg) + cuk, gy = beat.bs*Math.cos(hdg) + cvk;
+  const layCog = ((Math.atan2(gx,gy)*R2D)%360+360)%360;    // ground track on this tack
+  const offLay = ((brg - layCog + 540)%360)-180;
+  const onLayline = Math.abs(offLay) < 6 &&
+                    Math.abs((((brg - twd + 540)%360)-180)) < 90;
+  const overstood = (twaSteer < 0 ? offLay > 6 : offLay < -6) &&
+                    Math.abs((((brg - twd + 540)%360)-180)) < 90;
+
+  return { steer, tack, twd, tws, man, brg, dNm, twaSteer, onLayline,
+           overstood, layCog, beatTwa: beat.twa, tEnd: route.tEnd };
+}
+
+/* ------------------------------------------------------------------ views */
+function renderCall(){
+  const w = $('callWord'), sub = $('callSub'), sv = $('steerVal');
+  const p = S.plan;
+  if (!p){ w.className='wait'; w.textContent='STANDBY';
+    sub.textContent = S.route && !S.route.ok
+      ? 'No route from here — you may be outside the model grid.'
+      : 'Waiting for a position fix. Open Position & calibration to simulate instead.';
+    sv.textContent='---'; return; }
+  sv.textContent = Math.round(p.steer).toString().padStart(3,'0');
+
+  const haveCog = S.cog != null && S.sog != null && S.sog > 0.6;
+  const myTwa = haveCog ? ((S.cog - p.twd + 540)%360)-180 : null;
+  const crossing = haveCog && (myTwa * p.twaSteer < 0);
+  const off = haveCog ? Math.abs(((S.cog - p.steer + 540)%360)-180) : 0;
+
+  if (crossing && Math.abs(myTwa) < 90){
+    w.className = p.tack==='port' ? 'port' : 'stbd';
+    w.textContent = 'TACK';
+    sub.textContent = `Onto ${p.tack}. You are ${Math.round(off)}° off the plan.`;
+  } else if (crossing){
+    w.className = p.tack==='port' ? 'port' : 'stbd';
+    w.textContent = 'GYBE';
+    sub.textContent = `Onto ${p.tack}. You are ${Math.round(off)}° off the plan.`;
+  } else if (haveCog && off > 12){
+    w.className='hold'; w.textContent = off>0 ? 'ADJUST' : 'HOLD';
+    sub.textContent = `${Math.round(off)}° ${(((S.cog-p.steer+540)%360)-180)>0?'high':'low'} of the plan — come `
+      + `${(((S.cog-p.steer+540)%360)-180)>0?'down':'up'} to ${Math.round(p.steer)}°.`;
+  } else {
+    w.className = p.tack==='port' ? 'port' : 'stbd';
+    w.textContent = p.tack==='port' ? 'PORT' : 'STARBOARD';
+    let s = `TWA ${Math.round(Math.abs(p.twaSteer))}° in ${p.tws.toFixed(0)} kt from ${Math.round(p.twd)}°.`;
+    if (p.onLayline) s += ' On the layline (current-corrected).';
+    else if (p.overstood) s += ' You have overstood.';
+    if (S.holdMin) s += ` Leaving ${S.holdMin} min later gets there sooner.`;
+    sub.textContent = s;
+  }
+}
+
+function renderTiles(){
+  const p = S.plan;
+  $('tCog').textContent = S.cog!=null ? Math.round(S.cog).toString().padStart(3,'0') : '---';
+  $('tSog').textContent = S.sog!=null ? S.sog.toFixed(1) : '--';
+  const tn = $('tNext'), tu = $('tNextU'), tile = $('tileNext');
+  const td = $('tNextD');
+  if (p && p.man){
+    const mins = (p.man.t - nowHours())*60;
+    tn.textContent = mins < 1 ? 'NOW' : Math.round(mins);
+    tu.textContent = mins < 1 ? '' : ' min';
+    td.textContent = `${p.man.nm.toFixed(1)} nm · ${p.man.kind}`;
+    tile.classList.toggle('alarm', mins < 2);
+  } else { tn.textContent='--'; tu.textContent=''; td.textContent='none in plan';
+    tile.classList.remove('alarm'); }
+  $('lblMark').textContent = S.leg==='back' ? 'To finish' : 'To '+courseMarkName();
+  $('lblRound').textContent = 'Round '+courseMarkName();
+  $('btnLegOut').textContent = 'To '+courseMarkName();
+  $('tToMark').textContent = p ? p.dNm.toFixed(1) : '--';
+  const fin = (S.leg==='back') ? (S.route&&S.route.ok?S.route.tEnd:null)
+                               : (S.routeBack&&S.routeBack.ok?S.routeBack.tEnd:null);
+  $('tEta').textContent = fin!=null ? hhmm(fin) : '--:--';
+  $('lblEta').textContent = 'Finish ETA';
+
+  $('vRound').textContent = (S.leg!=='back' && S.route&&S.route.ok) ? hhmm(S.route.tEnd) : '--:--';
+  $('vFinish').textContent = fin!=null ? hhmm(fin) : '--:--';
+  const el = nowHours() - S.startT;
+  $('vElapsed').textContent = (S.leg!=='pre' && el>0) ? el.toFixed(2)+' h' : '--';
+  $('vRemain').textContent = fin!=null ? (fin-nowHours()).toFixed(2)+' h' : '--';
+  const lim = (DATA.race && DATA.race.timeLimitH) || 19;
+  $('vLimit').textContent = hhmm(lim);
+  const ih = $('vInHand');
+  if (fin!=null){ const m=(lim-fin)*60; ih.textContent=(m>=0?'+':'')+Math.round(m)+' min';
+    ih.style.color = m<0 ? 'var(--bad)' : m<30 ? 'var(--warn)' : ''; }
+  else { ih.textContent='--'; ih.style.color=''; }
+  renderZones();
+
+  if (S.pos){
+    const c = S.cf.sample(nowHours(), S.pos[0], S.pos[1]);
+    const w = S.wf.sample(nowHours(), S.pos[0], S.pos[1]);
+    $('cHere').textContent = c.kt.toFixed(2); $('cDir').textContent = Math.round(c.set);
+    $('wHere').textContent = w.kt.toFixed(1); $('wDir').textContent = Math.round(w.from);
+    $('pLat').textContent = S.pos[1].toFixed(4); $('pLon').textContent = S.pos[0].toFixed(4);
+  }
+}
+
+function renderData(){
+  $('dataNote').textContent = S.dataStatus || '';
+  const wn = $('windNote');
+  if (S.windSrc==='manual'){
+    wn.textContent = 'Manual: your observed wind is divided by the field’s structural '
+      + 'multiplier where you are, to set the domain mean. The Gate acceleration and the '
+      + 'island lees still apply on top.';
+  } else if (S.profile){
+    wn.textContent = `Profile from ${S.profile.source}. `
+      + (S.profile.nDropped ? `${S.profile.nDropped} station${S.profile.nDropped===1?'':'s'} outside the model domain ignored. ` : '')
+      + (S.profile.anchored
+         ? `Anchored to ${S.profile.nObs} live anemometer${S.profile.nObs===1?'':'s'}`
+           + (S.profile.tObs!=null?` at ${hhmm(S.profile.tObs)}`:'')
+           + `: implied domain mean `
+           + `${S.profile.impliedNow.toFixed(1)} kt now`
+           + (S.profile.dirErr!=null ? `, direction ${S.profile.dirErr>0?'+':''}${S.profile.dirErr.toFixed(0)}° vs model.` : '.')
+           + ' The correction relaxes back to the forecast over about 3 hours.'
+         : 'No live observations, so the forecast (or the parameterised sea breeze) runs unanchored.');
+  }
+  const ot = $('obsTable');
+  if (S.obs.length){
+    ot.innerHTML = '<tr><th>Anemometer</th><th>kt</th><th>gust</th><th>from</th><th>at</th></tr>'
+      + S.obs.map(o=>`<tr><td>${o.name.replace(/ \(.*\)/,'')}</td><td>${o.kt.toFixed(1)}</td>`
+        + `<td>${isFinite(o.gustKt)?o.gustKt.toFixed(1):'–'}</td><td>${Math.round(o.from)}°</td>`
+        + `<td>${o.time?o.time.slice(11):'–'}</td></tr>`).join('');
+  } else ot.innerHTML = '';
+
+  const t = nowHours();
+  const st = $('stnTable');
+  st.innerHTML = '<tr><th>NOAA station</th><th>kt</th><th>set</th></tr>'
+    + S.cf.zones.filter(z=>z.kind==='measured').map(z=>{
+        const s = S.series[z.base].at(t);
+        const flood = s>=0;
+        return `<tr><td>${z.name.replace(/,.*/,'')}</td>`
+          + `<td class="${flood?'':''}" style="color:${flood?'var(--flood)':'var(--ebb)'}">`
+          + `${Math.abs(s).toFixed(2)}</td>`
+          + `<td>${flood?z.dirFlood:z.dirEbb}°</td></tr>`;
+      }).join('');
+  $('curNote').innerHTML = 'Warm = flood, cool = ebb. The two zones that decide this race have no '
+    + 'NOAA station and are hand-modelled: the <b>Cityfront flood back-eddy</b> (sets west while '
+    + 'the Gate floods east) and the <b>Yellow Bluff ebb back-eddy</b> (sets east while the Gate '
+    + 'ebbs west). They are the model’s biggest editorial choice.';
+  $('mPhrf').textContent = Math.round(impliedPhrf(S.polar));
+}
+
+function impliedPhrf(p){
+  const up = p.bestVMG(12,true), dn = p.bestVMG(12,false);
+  const hours = 1/up.vmg + 1/p.at(90,12) + 1/dn.vmg;
+  return hours*3600/3 - 520;
+}
+
+function renderLanes(){
+  if (!S.lanes){ $('lanes').textContent =
+    'Tap Re-route to compare committing to one side (each corridor sailed optimally, obstructions applied).'; return; }
+  $('lanes').innerHTML = S.lanes.map(l =>
+    `<div class="rowval"><span>${l.name}</span><span style="font-family:var(--f-mono)">`
+    + (isFinite(l.h) ? `${l.h.toFixed(2)} h <span style="color:${l.d<=0.1?'var(--ok)':'var(--ink-faint)'}">`
+        + `${l.d>=0?'+':''}${(l.d*60).toFixed(0)} min</span>` : 'blocked') + '</span></div>').join('');
+}
+
+function renderZones(){
+  const el = $('zones');
+  const legs = [];
+  if (S.route && S.route.ok) legs.push([S.leg==='back'?'to finish':'to '+courseMarkName(), S.route]);
+  if (S.routeBack && S.routeBack.ok && S.leg!=='back') legs.push(['to finish', S.routeBack]);
+  if (!legs.length){ el.textContent='Shipping-lane crossings appear once a route is solved.'; return; }
+  const zones = DATA.shippingZones || [];
+  const rows = [];
+  for (const [tag, r] of legs){
+    for (const z of (r.zoneCrossings||[])){
+      if (z.kind==='precautionary' && zones[z.k] && zones[z.k].weight<=1) continue;  /* flag-only zone */
+      rows.push(`<div class="rowval"><span>${tag}: ${z.zone.replace(/ \(.*\)/,'')}</span>`
+        + `<span style="font-family:var(--f-mono)">${hhmm(z.tIn)}–${hhmm(z.tOut)}</span></div>`);
+    }
+  }
+  el.innerHTML = '<b>Rule 9 / SI 9.1 — plan crosses a ship lane:</b> '
+    + (rows.length ? rows.join('') : 'no lane on the plan.')
+    + ' <span style="color:var(--ink-faint)">Lanes are a soft cost (+10%); a ship in the lane has right of way and can push you off the plan here.</span>';
+}
+
+/* ------------------------------------------------------------------ chart */
+const cv = $('chart'), ctx = cv.getContext('2d');
+let dpr = 1, cw=0, ch=0;
+function resize(){
+  dpr = Math.min(window.devicePixelRatio||1, 2);
+  const r = cv.parentElement.getBoundingClientRect();
+  cw = r.width; ch = r.height;
+  cv.width = Math.round(cw*dpr); cv.height = Math.round(ch*dpr);
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  if (!S.view) fitView();
+  draw();
+}
+function fitView(){
+  const pad = 0.006;
+  let lo0=-122.56, lo1=-122.31, la0=37.785, la1=37.90;
+  S.view = {lo0:lo0-pad, lo1:lo1+pad, la0:la0-pad, la1:la1+pad};
+  S.follow = false; $('btnFollow').setAttribute('aria-pressed','false');
+}
+function followView(){
+  if (!S.pos) return;
+  const halfLon = 0.045, halfLat = halfLon*Math.cos(37.85*D2R)*(ch/Math.max(cw,1));
+  S.view = {lo0:S.pos[0]-halfLon, lo1:S.pos[0]+halfLon,
+            la0:S.pos[1]-halfLat, la1:S.pos[1]+halfLat};
+}
+function proj(lon,lat){
+  const v=S.view;
+  return [ (lon-v.lo0)/(v.lo1-v.lo0)*cw, ch - (lat-v.la0)/(v.la1-v.la0)*ch ];
+}
+const _cv={};
+function cssVar(n){
+  if (_cv.k !== document.documentElement.getAttribute('data-theme')){ _cv.k=document.documentElement.getAttribute('data-theme'); _cv.m={}; }
+  if (_cv.m[n]===undefined)
+    _cv.m[n]=getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  return _cv.m[n];
+}
+
+let fieldCanvas=null;
+function draw(){
+  if (!S.grid || !S.view) return;
+  const t = nowHours();
+  ctx.clearRect(0,0,cw,ch);
+  ctx.fillStyle = cssVar('--ground'); ctx.fillRect(0,0,cw,ch);
+
+  /* field raster: one ImageData at grid resolution, scaled up */
+  const g = S.grid;
+  if (!fieldCanvas || fieldCanvas.width!==g.nx || fieldCanvas.height!==g.ny){
+    fieldCanvas = document.createElement('canvas');
+    fieldCanvas.width=g.nx; fieldCanvas.height=g.ny;
+  }
+  const fx = fieldCanvas.getContext('2d');
+  const img = fx.createImageData(g.nx,g.ny);
+  /* resolve theme colours once -- getComputedStyle inside the per-cell loop
+     would cost thousands of style recalcs per frame */
+  const landRGB = hexRGB(cssVar('--land'));
+  const floodRGB = hexRGB(cssVar('--flood')), ebbRGB = hexRGB(cssVar('--ebb'));
+  const seaRGB = document.documentElement.getAttribute('data-theme')==='light'
+    ? [232,238,245] : [13,20,32];
+  const windLo = seaRGB, windHi = [120,200,255];
+  let U=null,V=null,W=null;
+  if (S.layer==='current'){ const c=S.cf.at(t); U=c.u; V=c.v; }
+  else { W = S.wf.at(t).tws; }
+  for (let r=0;r<g.ny;r++) for (let c=0;c<g.nx;c++){
+    const i=r*g.nx+c, o=((g.ny-1-r)*g.nx+c)*4;
+    if (g.land[i]){ img.data[o]=landRGB[0]; img.data[o+1]=landRGB[1]; img.data[o+2]=landRGB[2]; img.data[o+3]=255; continue; }
+    if (!g.water[i]){ img.data[o+3]=0; continue; }
+    let col;
+    if (S.layer==='current'){
+      const sp=Math.hypot(U[i],V[i]);
+      /* east-going = flood-ish, west-going = ebb-ish */
+      const east = U[i] >= 0;
+      const a = Math.min(sp/3.2,1);
+      col = mix(seaRGB, east?floodRGB:ebbRGB, a);
+    } else {
+      col = mix(windLo, windHi, clamp((W[i]-4)/22,0,1));
+    }
+    img.data[o]=col[0]; img.data[o+1]=col[1]; img.data[o+2]=col[2]; img.data[o+3]=235;
+  }
+  fx.putImageData(img,0,0);
+  const p0=proj(g.LON[0], g.LAT[(g.ny-1)*g.nx]);
+  const p1=proj(g.LON[g.nx-1], g.LAT[0]);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(fieldCanvas, p0[0], p0[1], p1[0]-p0[0], p1[1]-p0[1]);
+
+  /* SI 9.1 shipping zones (dashed, soft) */
+  for (const z of (DATA.shippingZones||[])){
+    ctx.strokeStyle = 'rgba(159,180,255,0.55)'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+    ctx.beginPath();
+    z.poly.forEach((p,k)=>{ const q=proj(p[0],p[1]); k?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); });
+    ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+  }
+  /* SI 10 obstruction lines (solid red, hard no-go) */
+  for (const ob of (DATA.obstructions||[])){
+    ctx.strokeStyle = '#ff3b3b'; ctx.lineWidth=2.5; ctx.lineCap='round';
+    ctx.beginPath();
+    ob.line.forEach((p,k)=>{ const q=proj(p[0],p[1]); k?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); });
+    ctx.stroke();
+  }
+
+  /* planned route */
+  if (S.route && S.route.ok) strokePath(S.route.path, cssVar('--accent'), 2.4);
+  if (S.routeBack && S.routeBack.ok && S.leg!=='back')
+    strokePath(S.routeBack.path, cssVar('--accent-dim'), 1.8);
+
+  /* sailed trail */
+  if (S.trail.length>1){
+    ctx.strokeStyle = cssVar('--ink'); ctx.lineWidth=2.6; ctx.lineJoin='round';
+    ctx.beginPath();
+    S.trail.forEach((p,k)=>{ const q=proj(p[0],p[1]); k?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); });
+    ctx.stroke();
+  }
+
+  /* marks */
+  for (const [k,v] of Object.entries(DATA.marks)){
+    if (k==='finish') continue;
+    const q=proj(v[0],v[1]);
+    ctx.fillStyle=cssVar('--accent'); ctx.strokeStyle=cssVar('--ground'); ctx.lineWidth=2;
+    ctx.beginPath(); ctx.arc(q[0],q[1],5,0,7); ctx.fill(); ctx.stroke();
+    ctx.fillStyle=cssVar('--ink-dim'); ctx.font='600 10px '+cssVar('--f-body');
+    const txt = k==='start' ? 'START/FIN' : k==='easom' ? 'EASOM' : 'BONITA';
+    const w = ctx.measureText(txt).width;
+    const flip = q[0] + 10 + w > cw - 8;
+    ctx.fillText(txt, flip ? q[0]-8-w : q[0]+8, q[1]+3);
+  }
+
+  /* own boat */
+  if (S.pos){
+    const q=proj(S.pos[0],S.pos[1]);
+    const hdg=(S.cog!=null?S.cog:0)*D2R;
+    ctx.save(); ctx.translate(q[0],q[1]); ctx.rotate(hdg);
+    ctx.fillStyle=cssVar('--ink'); ctx.strokeStyle=cssVar('--ground'); ctx.lineWidth=1.5;
+    ctx.beginPath(); ctx.moveTo(0,-9); ctx.lineTo(5.5,7); ctx.lineTo(0,4); ctx.lineTo(-5.5,7);
+    ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+    if (S.plan){
+      const r=Math.min(cw,ch)*0.30, a=S.plan.steer*D2R;
+      ctx.strokeStyle=cssVar('--accent'); ctx.lineWidth=1.4; ctx.setLineDash([5,4]);
+      ctx.beginPath(); ctx.moveTo(q[0],q[1]);
+      ctx.lineTo(q[0]+Math.sin(a)*r, q[1]-Math.cos(a)*r); ctx.stroke(); ctx.setLineDash([]);
+    }
+  }
+
+  /* scale bar */
+  const nmPx = (1852/ ( (S.view.lo1-S.view.lo0)*DATA.proj.mPerDegLon )) * cw;
+  ctx.strokeStyle=cssVar('--ink-faint'); ctx.lineWidth=1.5;
+  ctx.beginPath(); ctx.moveTo(12,44); ctx.lineTo(12+nmPx,44); ctx.stroke();
+  ctx.fillStyle=cssVar('--ink-faint'); ctx.font='500 10px '+cssVar('--f-body');
+  ctx.fillText('1 nm', 12, 39);
+}
+function strokePath(path,color,w){
+  ctx.strokeStyle=color; ctx.lineWidth=w; ctx.lineJoin='round'; ctx.lineCap='round';
+  ctx.beginPath();
+  path.forEach((p,k)=>{ const q=proj(p.lon,p.lat); k?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]); });
+  ctx.stroke();
+}
+function hexRGB(h){
+  h=h.replace('#','').trim();
+  if(h.length===3) h=h.split('').map(c=>c+c).join('');
+  return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)];
+}
+function mix(a,b,t){ return [a[0]+(b[0]-a[0])*t, a[1]+(b[1]-a[1])*t, a[2]+(b[2]-a[2])*t]; }
+
+/* ------------------------------------------------------------------- GPS */
+let watchId=null;
+function startGps(){
+  if (!navigator.geolocation){
+    $('calNote').textContent = 'This browser exposes no geolocation API.'; return;
+  }
+  setDot('dGps','warn');
+  watchId = navigator.geolocation.watchPosition(p=>{
+    S.sim=false;
+    S.pos=[p.coords.longitude, p.coords.latitude];
+    if (p.coords.heading!=null && !isNaN(p.coords.heading)) S.cog=p.coords.heading;
+    if (p.coords.speed!=null && !isNaN(p.coords.speed)) S.sog=p.coords.speed*1.94384;
+    S.posTime=Date.now();
+    pushTrail();
+    setDot('dGps','ok');
+    onFix();
+  }, err=>{
+    setDot('dGps','bad');
+    $('calNote').textContent = 'Location unavailable: ' + err.message
+      + (S.canFetch ? '' : ' — a page served from claude.ai may not be granted location. '
+        + 'Use the copy on your own host, or Simulate.');
+  }, {enableHighAccuracy:true, maximumAge:2000, timeout:20000});
+  $('btnGps').textContent='GPS running';
+}
+function pushTrail(){
+  const last=S.trail[S.trail.length-1];
+  if (!last || Math.hypot(S.pos[0]-last[0],S.pos[1]-last[1])>0.0004) S.trail.push(S.pos.slice());
+  if (S.trail.length>4000) S.trail.shift();
+}
+function onFix(){
+  if (S.follow) followView();
+  runCal();
+  applyWindSource();
+  solve(false);
+  renderTiles(); renderCall(); draw();
+}
+function runCal(){
+  if (!S.router || !S.pos || S.cog==null || S.sog==null || S.sog<1) return;
+  const c = M.Live.gpsCheck(S.router, S.pos[0], S.pos[1], nowHours(), S.cog, S.sog);
+  S.cal = c;
+  $('calPred').textContent = c.ok ? c.predictedSog.toFixed(2) : '--';
+  $('calRatio').textContent = c.ok ? c.ratio.toFixed(2) : '--';
+  $('btnApplyCal').disabled = !c.ok;
+  if (c.ok){
+    const pct = Math.abs(c.ratio-1)*100;
+    $('calNote').textContent = pct<6
+      ? `Model and GPS agree to ${pct.toFixed(0)}%. Nothing to correct.`
+      : `You are sailing ${c.ratio>1?'faster':'slower'} than the model by ${pct.toFixed(0)}%. `
+        + `Most often that is the wind, not the boat — applying it scales the wind field.`;
+  }
+}
+
+/* --------------------------------------------------------------- simulate */
+function startSim(){
+  if (!S.route || !S.route.ok){ solve(true); }
+  S.sim = true; S.simIdx = 0;
+  S.simPath = (S.route&&S.route.ok) ? S.route.path : null;
+  if (!S.simPath) return;
+  S.clockMode='manual'; setSeg('segClock','clock','manual');
+  $('btnSim').textContent='Simulating';
+  setDot('dGps','warn');
+  clearInterval(simTimer);
+  simTimer = setInterval(()=>{
+    if (!S.simPath || S.simIdx>=S.simPath.length-1){ clearInterval(simTimer); return; }
+    const a=S.simPath[S.simIdx], b=S.simPath[Math.min(S.simIdx+1,S.simPath.length-1)];
+    S.pos=[a.lon,a.lat];
+    S.cog=M.bearing([a.lon,a.lat],[b.lon,b.lat],S.grid);
+    const dt=Math.max(b.t-a.t,1e-5);
+    S.sog=M.distNm([a.lon,a.lat],[b.lon,b.lat],S.grid)/dt;
+    S.manualTime=a.t; $('rTime').value=a.t; $('mTime').textContent=hhmm(a.t);
+    pushTrail();
+    S.simIdx += 2;
+    if (S.follow) followView();
+    runCal(); renderTiles(); renderCall(); draw();
+  }, 700);
+}
+let simTimer=null;
+
+/* ------------------------------------------------------------------ lanes */
+/* corridors come from the Python model (sweep.LANES), keyed by course */
+function laneSet(){
+  const L = (DATA.lanes && DATA.lanes[S.course]) || {};
+  return L[S.leg==='back' ? 'back' : 'out'] || {};
+}
+function laneMask(wps, halfW){
+  const g=S.grid, m=new Uint8Array(g.N);
+  const pts = wps.map(p=>[(p[0]-g.lon0)*g.mLon,(p[1]-g.lat0)*g.mLat]);
+  for (let i=0;i<g.N;i++){
+    let best=Infinity;
+    for (let k=1;k<pts.length;k++){
+      const a=pts[k-1],b=pts[k];
+      const vx=b[0]-a[0], vy=b[1]-a[1], L2=Math.max(vx*vx+vy*vy,1e-9);
+      let t=((g.X[i]-a[0])*vx+(g.Y[i]-a[1])*vy)/L2; t=clamp(t,0,1);
+      best=Math.min(best,Math.hypot(g.X[i]-(a[0]+t*vx), g.Y[i]-(a[1]+t*vy)));
+    }
+    m[i]= best>halfW ? 1:0;
+  }
+  return m;
+}
+function compareLanes(){
+  if (!S.route || !S.route.ok) return;
+  const set = laneSet();
+  const from = originNow(), to = activeTarget();
+  const t0 = (S.leg==='pre')?S.startT:nowHours();
+  const rows=[];
+  for (const [name,wps] of Object.entries(set)){
+    const r = S.router.route(from,to,t0,{forbid:laneMask(wps, DATA.laneHalfWidthM||1500)});
+    rows.push({name, h: r.ok?r.elapsed:Infinity, d: r.ok?r.elapsed-S.route.elapsed:Infinity});
+  }
+  rows.sort((a,b)=>a.h-b.h);
+  S.lanes=rows; renderLanes();
+}
+
+/* ----------------------------------------------------------------- wiring */
+function setSeg(id, attr, val){
+  [...$(id).children].forEach(b=>b.setAttribute('aria-pressed', String(b.dataset[attr]===val)));
+}
+$('segCourse').onclick = e => { const b=e.target.closest('button'); if(!b) return;
+  S.course=b.dataset.course; setSeg('segCourse','course',S.course); S.lanes=null; renderLanes();
+  solve(true); setTimeout(compareLanes, 120); };
+$('segLeg').onclick = e => { const b=e.target.closest('button'); if(!b) return;
+  S.leg=b.dataset.leg; setSeg('segLeg','leg',S.leg); S.lanes=null; renderLanes(); solve(true); };
+$('segWind').onclick = e => { const b=e.target.closest('button'); if(!b) return;
+  S.windSrc=b.dataset.src; setSeg('segWind','src',S.windSrc); applyWindSource();
+  renderData(); solve(true); };
+$('segClock').onclick = e => { const b=e.target.closest('button'); if(!b) return;
+  S.clockMode=b.dataset.clock; setSeg('segClock','clock',S.clockMode); solve(true); };
+
+$('rTws').oninput = e => { S.manualTws=+e.target.value; $('mTws').textContent=S.manualTws;
+  if(S.windSrc==='manual'){ applyWindSource(); solve(true);} };
+$('rTwd').oninput = e => { S.manualTwd=+e.target.value; $('mTwd').textContent=S.manualTwd;
+  if(S.windSrc==='manual'){ applyWindSource(); solve(true);} };
+$('rCur').oninput = e => { S.curScale=+e.target.value; $('mCur').textContent=S.curScale.toFixed(2);
+  S.cf.strength=S.curScale; S.router.fieldCache.clear(); S.router.edgeCache.clear(); };
+$('rCur').onchange = () => solve(true);
+$('rPol').oninput = e => { S.polScale=+e.target.value; $('mPol').textContent=S.polScale.toFixed(2);
+  S.polar=new M.Polar(DATA,S.polScale); S.router.polar=S.polar; S.router.edgeCache.clear();
+  $('mPhrf').textContent=Math.round(impliedPhrf(S.polar)); };
+$('rPol').onchange = () => solve(true);
+$('rRes').oninput = e => { $('mRes').textContent=e.target.value; };
+$('rRes').onchange = e => { S.res=+e.target.value; buildFields(); fieldCanvas=null; solve(true); renderData(); };
+$('rTime').oninput = e => { S.manualTime=+e.target.value; $('mTime').textContent=hhmm(S.manualTime);
+  if(S.clockMode==='manual'){ renderTiles(); draw(); } };
+$('rTime').onchange = () => { if(S.clockMode==='manual') solve(true); };
+$('inStart').onchange = e => { const [h,m]=e.target.value.split(':'); S.startT=+h+ +m/60; solve(true); };
+
+$('btnGps').onclick = startGps;
+$('btnSim').onclick = startSim;
+$('btnSolve').onclick = () => { solve(true); setTimeout(compareLanes, 120); };
+$('btnRefresh').onclick = () => loadLive(true);
+$('btnApplyCal').onclick = () => {
+  if (!S.cal || !S.cal.ok) return;
+  const k = clamp(S.cal.ratio, 0.7, 1.4);
+  /*
+    Do not compound: set the scale from the baseline each time.  And upwind
+    above ~16 kt the polar is nearly flat in wind speed, so scaling the wind
+    barely moves the prediction, the ratio persists, and repeated taps would
+    walk the wind field into nonsense while never closing the gap.  In that
+    regime the honest correction is the boat, not the breeze.
+  */
+  const twaNow = Math.abs(((S.cog - S.cal.twdDeg + 540) % 360) - 180);
+  const plateau = twaNow < 60 && S.cal.tws > 15;
+  if (plateau){
+    S.polScale = clamp(S.polScale * k, 0.88, 1.12);
+    $('rPol').value = S.polScale; $('mPol').textContent = S.polScale.toFixed(2);
+    S.polar = new M.Polar(DATA, S.polScale); S.router.polar = S.polar;
+    S.router.edgeCache.clear();
+    $('mPhrf').textContent = Math.round(impliedPhrf(S.polar));
+    $('calNote').textContent = `Upwind in ${S.cal.tws.toFixed(0)} kt the polar is `
+      + `flat in wind speed, so this went to boatspeed: scale now ×${S.polScale.toFixed(2)} `
+      + `(implied PHRF ${Math.round(impliedPhrf(S.polar))}).`;
+  } else {
+    S.windCal = clamp((S.windCal || 1) * k, 0.7, 1.4);
+    S.wf.speedScale = S.windCal;
+    S.router.fieldCache.clear(); S.router.edgeCache.clear();
+    $('calNote').textContent = `Wind field scaled by ×${S.windCal.toFixed(2)} `
+      + `from baseline. Re-routing.`;
+  }
+  solve(true);
+};
+$('btnLayer').onclick = () => { S.layer = S.layer==='current'?'wind':'current';
+  $('btnLayer').textContent = S.layer==='current'?'Current':'Wind'; draw(); };
+$('btnFollow').onclick = () => { S.follow=!S.follow;
+  $('btnFollow').setAttribute('aria-pressed',String(S.follow));
+  if (S.follow) followView(); draw(); };
+$('btnFit').onclick = () => { fitView(); draw(); };
+$('btnTheme').onclick = () => {
+  const cur = document.documentElement.getAttribute('data-theme');
+  document.documentElement.setAttribute('data-theme', cur==='light'?'dark':'light');
+  fieldCanvas=null; draw();
+};
+
+/* pan / pinch on the chart */
+let drag=null;
+cv.addEventListener('pointerdown', e=>{ drag={x:e.clientX,y:e.clientY,v:{...S.view}};
+  cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointermove', e=>{
+  if(!drag) return;
+  const dx=(e.clientX-drag.x)/cw*(drag.v.lo1-drag.v.lo0);
+  const dy=(e.clientY-drag.y)/ch*(drag.v.la1-drag.v.la0);
+  S.view={lo0:drag.v.lo0-dx, lo1:drag.v.lo1-dx, la0:drag.v.la0+dy, la1:drag.v.la1+dy};
+  S.follow=false; $('btnFollow').setAttribute('aria-pressed','false'); draw();
+});
+cv.addEventListener('pointerup', ()=>drag=null);
+cv.addEventListener('wheel', e=>{
+  e.preventDefault();
+  const k = e.deltaY>0?1.12:0.89;
+  const cx=(S.view.lo0+S.view.lo1)/2, cy=(S.view.la0+S.view.la1)/2;
+  const w=(S.view.lo1-S.view.lo0)*k/2, h=(S.view.la1-S.view.la0)*k/2;
+  S.view={lo0:cx-w,lo1:cx+w,la0:cy-h,la1:cy+h}; draw();
+},{passive:false});
+
+window.addEventListener('resize', resize);
+
+/* keep the screen awake while racing */
+let wl=null;
+async function wake(){ try{ if('wakeLock' in navigator) wl = await navigator.wakeLock.request('screen'); }catch(e){} }
+document.addEventListener('visibilitychange', ()=>{ if(document.visibilityState==='visible') wake(); });
+
+/* ------------------------------------------------------------------- boot */
+function tick(){
+  $('clock').textContent = hhmm(nowHours());
+  if (S.clockMode==='live'){ renderTiles(); }
+}
+function boot(){
+  $('ftBuild').textContent = `Model data built ${DATA.meta.built.slice(0,10)} · `
+    + `${DATA.stations.length} NOAA current stations, ${DATA.derivedZones.length} hand zones, `
+    + `${DATA.metStations.length} anemometers · polar: ${DATA.polar.name}`;
+  buildFields();
+  $('obsNote').innerHTML = '<b>SI 10 obstructions (hard, crossing = retire):</b> '
+    + (DATA.obstructions||[]).map(o => `${o.si} ${o.name.split(' to ')[0]} <span style="color:var(--ink-faint)">[${o.status.split(' ')[0]}]</span>`).join(' · ')
+    + '. Drawn red on the chart; the router cannot cross them.';
+  $('mPhrf').textContent = Math.round(impliedPhrf(S.polar));
+  fitView(); resize();
+  renderData();
+  solve(true);
+  setTimeout(compareLanes, 400);
+  setInterval(tick, 1000);
+  setInterval(()=>{ if (S.pos && !S.sim) solve(false); }, 20000);
+  /* anemometer data is 6-minute; refetch so the sea breeze actually fills */
+  setInterval(()=>{ if (S.canFetch && !S.sim) loadLive(false); }, 6*60*1000);
+  loadLive(false);
+  wake();
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+else boot();
+})();
+</script>
