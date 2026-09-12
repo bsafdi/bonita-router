@@ -541,15 +541,23 @@ class WindField {
     const s = this.meanAt(t);
     const out = this._s;
     for (let i = 0; i < this.grid.N; i++) out[i] = s * this.struct[i];
-    if (this.dirOffset !== 0) {
+    /* dirOffset is a fixed rotation (manual wind); the profile may add a
+       time-dependent one (live veer, relaxed -- see Live.buildProfile).
+       The returned twd buffer is reused between calls, like tws. */
+    const off = this.dirOffset + this.dirShiftAt(t);
+    if (off !== 0) {
       if (!this._dirShifted) this._dirShifted = new Float32Array(this.grid.N);
       for (let i = 0; i < this.grid.N; i++)
-        this._dirShifted[i] = this.dirFrom[i] + this.dirOffset;
+        this._dirShifted[i] = this.dirFrom[i] + off;
       return { tws: out, twd: this._dirShifted };
     }
     return { tws: out, twd: this.dirFrom };
   }
   meanAt(t) { return this.profile.mean(t) * this.speedScale; }
+  dirShiftAt(t) {
+    return (this.profile && typeof this.profile.dirShift === 'function')
+      ? this.profile.dirShift(t) : 0;
+  }
   sample(t, lon, lat) {
     const w = this.at(t), i = this.grid.idxWater(lon, lat);
     return { kt: w.tws[i], from: ((w.twd[i] * R2D) % 360 + 360) % 360 };
@@ -557,7 +565,11 @@ class WindField {
   /* structural multiplier at a point -- used to turn a local observation into
      a domain-mean estimate */
   structAt(lon, lat) { return this.struct[this.grid.idxWater(lon, lat)]; }
-  dirAt(lon, lat) { return this.dirFrom[this.grid.idxWater(lon, lat)] + this.dirOffset; }
+  /* UNROTATED model direction at a point, radians FROM.  Callers use it to
+     compute an offset against the model; including the current offset here
+     made a re-applied correction measure against its own previous rotation
+     and toggle between full and zero on every GPS fix. */
+  dirAt(lon, lat) { return this.dirFrom[this.grid.idxWater(lon, lat)]; }
 }
 
 /* -------------------------------------------------------------- polar */
@@ -706,7 +718,7 @@ class Router {
     if (!hit) {
       const tb = (b + 0.5) * this.dtBin;
       const w = this.wf.at(tb), c = this.cf.at(tb);
-      hit = { bin: b, tws: Float32Array.from(w.tws), twd: w.twd,
+      hit = { bin: b, tws: Float32Array.from(w.tws), twd: Float32Array.from(w.twd),
               cu: Float32Array.from(c.u), cv: Float32Array.from(c.v) };
       if (this.currentScale !== 1) {
         for (let i = 0; i < hit.cu.length; i++) { hit.cu[i] *= this.currentScale; hit.cv[i] *= this.currentScale; }
@@ -1078,8 +1090,17 @@ const Live = {
       if (anchor === 1 || tObs == null) return b;
       return b * (1 + (anchor - 1) * Math.exp(-Math.abs(t - tObs) / relax));
     };
+    /*
+      The direction error relaxes exactly like the strength anchor.  Applied
+      as a fixed rotation of the whole day it turned an 08:24 south-westerly
+      land breeze (-38 deg vs the model) into a -38 deg rotation of the 13:00
+      sea breeze, and the beat to Bonita came out as four straight boards
+      sailed within 8 deg of the real wind.  Radians, added to dirFrom.
+    */
+    const dirShift = (t) => (dirErr == null || tObs == null) ? 0
+      : dirErr * D2R * Math.exp(-Math.abs(t - tObs) / relax);
 
-    return { mean, source: fcMean ? 'forecast' : 'parametric',
+    return { mean, dirShift, source: fcMean ? 'forecast' : 'parametric',
              anchored: anchor !== 1, anchor, impliedNow, dirErr,
              nObs: obs.length, nDropped: obsIn.length - obs.length, tObs };
   },

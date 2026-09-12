@@ -1,5 +1,5 @@
 /* Bonita Router service worker -- cache the shell so the app opens with no signal. */
-const CACHE = 'bonita-20260912051812';
+const CACHE = 'bonita-20260912154136';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 self.addEventListener('install', e => {
   self.skipWaiting();

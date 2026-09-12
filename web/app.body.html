@@ -396,7 +396,9 @@ function applyWindSource(){
       forecast: S.forecast, obs: S.obs, tNow: nowHours(), relaxHours: 3,
       domain: DATA.domain });
     S.wf.profile = S.profile;
-    S.wf.dirOffset = (S.profile.dirErr != null) ? S.profile.dirErr * D2R : 0;
+    /* the live direction correction lives in profile.dirShift(t), relaxed
+       like the strength anchor -- not as a rotation of the whole day */
+    S.wf.dirOffset = 0;
   }
   if (S.router) S.router.fieldCache.clear(), S.router.edgeCache.clear();
 }
