@@ -1155,7 +1155,9 @@ function tick(){
   if (S.clockMode==='live'){ renderTiles(); }
 }
 function boot(){
-  $('ftBuild').textContent = `Model data built ${DATA.meta.built.slice(0,10)} · `
+  /* to the minute, not the day: on race day every build shares a date, and
+     "which build is my phone actually running" has to be answerable */
+  $('ftBuild').textContent = `Build ${DATA.meta.built.slice(0,16).replace('T',' ')}Z · `
     + `${DATA.stations.length} NOAA current stations, ${DATA.derivedZones.length} hand zones, `
     + `${DATA.metStations.length} anemometers · polar: ${DATA.polar.name}`;
   buildFields();

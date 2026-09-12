@@ -90,8 +90,18 @@ self.addEventListener('fetch', e => {{
     }}).catch(() => caches.match(e.request)));
     return;
   }}
-  /* the app shell: cache first, so it opens instantly and offline */
-  e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
+  /* The app shell: serve the cache immediately so it opens instantly and with
+     no signal, but ALWAYS refetch in the background and store the result, so
+     the next open is current.  Pure cache-first stranded phones on a stale
+     build: nothing refetched the shell until the browser happened to re-check
+     sw.js, which an installed PWA does lazily. */
+  e.respondWith(caches.match(e.request).then(r => {{
+    const net = fetch(e.request).then(res => {{
+      if (res && res.ok) {{ const c = res.clone(); caches.open(CACHE).then(k => k.put(e.request, c)); }}
+      return res;
+    }}).catch(() => r);
+    return r || net;
+  }}));
 }});
 """)
 
