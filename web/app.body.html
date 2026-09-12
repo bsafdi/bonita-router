@@ -465,6 +465,18 @@ function originNow(){
   if (S.leg === 'pre' || !S.pos) return DATA.marks.start;
   return S.pos;
 }
+/*
+  When the leg departs.  The default leg is 'out', so before the gun -- no
+  fix yet, origin = the start mark -- the route was being solved departing
+  NOW: at 09:00 that is 8 kt of a sea breeze that has not filled in, a tide
+  two hours off, and the live direction correction at full strength, none of
+  which is the race.  The way out never departs before the start.
+*/
+function departT(t){
+  if (S.leg === 'pre') return S.startT;
+  if (S.leg === 'out') return Math.max(t, S.startT);
+  return t;
+}
 
 function solve(force){
   if (S.solving) return;
@@ -477,7 +489,7 @@ function solve(force){
     const t0 = performance.now();
     try{
       const from = originNow();
-      const startT = (S.leg==='pre') ? S.startT : t;
+      const startT = departT(t);
       let a = S.router.route(from, activeTarget(), startT);
       S.holdMin = 0;
       /*
@@ -788,8 +800,17 @@ function resize(){
 }
 function fitView(){
   const pad = 0.006;
-  let lo0=-122.56, lo1=-122.31, la0=37.785, la1=37.90;
-  S.view = {lo0:lo0-pad, lo1:lo1+pad, la0:la0-pad, la1:la1+pad};
+  let lo0=-122.56-pad, lo1=-122.31+pad, la0=37.785-pad, la1=37.90+pad;
+  /* keep the Bay's true shape on whatever canvas we have, as followView
+     already does: stretched to fill a portrait phone, the fit view squeezed
+     east-west by up to 2x and a 45-degree tack was not drawn at 45 */
+  if (cw > 0 && ch > 0){
+    const k = Math.cos(37.85*D2R);
+    const need = (la1-la0)/((lo1-lo0)*k), have = ch/cw;
+    if (have > need){ const c=(la0+la1)/2, h=(lo1-lo0)*k*have/2; la0=c-h; la1=c+h; }
+    else { const c=(lo0+lo1)/2, w=(la1-la0)/k/have/2; lo0=c-w; lo1=c+w; }
+  }
+  S.view = {lo0, lo1, la0, la1};
   S.follow = false; $('btnFollow').setAttribute('aria-pressed','false');
 }
 function followView(){
@@ -1037,7 +1058,7 @@ function compareLanes(){
   if (!S.route || !S.route.ok) return;
   const set = laneSet();
   const from = originNow(), to = activeTarget();
-  const t0 = (S.leg==='pre')?S.startT:nowHours();
+  const t0 = departT(nowHours());
   const rows=[];
   for (const [name,wps] of Object.entries(set)){
     const r = S.router.route(from,to,t0,{forbid:laneMask(wps, DATA.laneHalfWidthM||1500)});
@@ -1169,7 +1190,7 @@ function boot(){
     + (DATA.obstructions||[]).map(o => `${o.si} ${o.name.split(' to ')[0]} <span style="color:var(--ink-faint)">[${o.status.split(' ')[0]}]</span>`).join(' · ')
     + '. Drawn red on the chart; the router cannot cross them.';
   $('mPhrf').textContent = Math.round(impliedPhrf(S.polar));
-  fitView(); resize();
+  resize();   /* sizes the canvas, then fits the view to it */
   renderData();
   solve(true);
   setTimeout(compareLanes, 400);
